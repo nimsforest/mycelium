@@ -99,6 +99,7 @@ func (srv *Server) routes() {
 	srv.mux.HandleFunc("POST /users/{id}/grant", srv.handleUserGrant)
 	srv.mux.HandleFunc("GET /passports", srv.handlePassports)
 	srv.mux.HandleFunc("POST /passports/create", srv.handlePassportCreate)
+	srv.mux.HandleFunc("POST /passports/{agent_id}/delete", srv.handlePassportDelete)
 }
 
 func (srv *Server) render(w http.ResponseWriter, r *http.Request, page string, pd pageData) {
@@ -214,6 +215,8 @@ func (srv *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var defaultCapabilities = []string{"read", "write", "admin", "deploy", "observe"}
+
 func (srv *Server) handlePassports(w http.ResponseWriter, r *http.Request) {
 	passports, _ := srv.passports.List()
 	orgs, _ := srv.organizations.List()
@@ -226,6 +229,7 @@ func (srv *Server) handlePassports(w http.ResponseWriter, r *http.Request) {
 			"Passports":     passports,
 			"Organizations": orgs,
 			"Users":         users,
+			"Capabilities":  defaultCapabilities,
 		},
 	})
 }
@@ -329,37 +333,32 @@ func (srv *Server) handleUserGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) handlePassportCreate(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	// If a user was selected, use their ID and set type to human
+	userID := strings.TrimSpace(r.FormValue("user_id"))
 	agentID := strings.TrimSpace(r.FormValue("agent_id"))
 	agentType := strings.TrimSpace(r.FormValue("agent_type"))
-	if agentID == "" || agentType == "" {
-		http.Error(w, "agent_id and agent_type are required", http.StatusBadRequest)
+
+	if userID != "" {
+		agentID = userID
+		agentType = "human"
+	}
+
+	if agentID == "" {
+		http.Error(w, "select a user or enter an agent ID", http.StatusBadRequest)
 		return
 	}
-
-	var allowed []string
-	if v := strings.TrimSpace(r.FormValue("allowed_organizations")); v != "" {
-		for _, s := range strings.Split(v, ",") {
-			if t := strings.TrimSpace(s); t != "" {
-				allowed = append(allowed, t)
-			}
-		}
-	}
-
-	var caps []string
-	if v := strings.TrimSpace(r.FormValue("capabilities")); v != "" {
-		for _, s := range strings.Split(v, ",") {
-			if t := strings.TrimSpace(s); t != "" {
-				caps = append(caps, t)
-			}
-		}
+	if agentType == "" {
+		agentType = "service"
 	}
 
 	p := &mycelium.Passport{
 		AgentID:              agentID,
 		AgentType:            agentType,
 		HomeOrganization:     strings.TrimSpace(r.FormValue("home_organization")),
-		AllowedOrganizations: allowed,
-		Capabilities:         caps,
+		AllowedOrganizations: r.Form["allowed_organizations"],
+		Capabilities:         r.Form["capabilities"],
 	}
 	if err := srv.passports.Create(p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -367,6 +366,18 @@ func (srv *Server) handlePassportCreate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	log.Printf("dashboard: passport issued: %s (%s)", agentID, agentType)
+	w.Header().Set("HX-Redirect", "/passports")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (srv *Server) handlePassportDelete(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agent_id")
+	if err := srv.store.Delete("passports." + agentID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("dashboard: passport revoked: %s", agentID)
 	w.Header().Set("HX-Redirect", "/passports")
 	w.WriteHeader(http.StatusNoContent)
 }
