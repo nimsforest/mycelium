@@ -8,6 +8,17 @@
     <form hx-post="/passports/create" hx-swap="none" class="space-y-4">
         <div class="flex flex-wrap gap-4 items-end">
             <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Holder</label>
+                <select name="user_id" id="passport-user"
+                    onchange="var f=this.form; if(this.value) { f.agent_id.value=this.value; f.agent_type.value='human'; f.agent_id.readOnly=true; } else { f.agent_id.value=''; f.agent_type.value=''; f.agent_id.readOnly=false; }"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy focus:outline-none focus:border-forest-green/50 w-56">
+                    <option value="">Software agent</option>
+                    {{range .Data.Users}}
+                    <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div>
                 <label class="block text-xs text-soil/70 mb-1 font-ui">Agent ID</label>
                 <input type="text" name="agent_id" required placeholder="nightwatch"
                     class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-48">
@@ -63,8 +74,16 @@
             <tbody>
                 {{range .Data.Passports}}
                 <tr class="border-b border-sprout/10 last:border-0">
-                    <td class="px-5 py-3 text-canopy font-medium">{{.AgentID}}</td>
-                    <td class="px-5 py-3 text-soil/70 font-ui">{{.AgentType}}</td>
+                    <td class="px-5 py-3 text-canopy font-medium">
+                        {{if eq .AgentType "human"}}<a href="/users/{{.AgentID}}" class="hover:text-forest-green transition-colors">{{.AgentID}}</a>{{else}}{{.AgentID}}{{end}}
+                    </td>
+                    <td class="px-5 py-3 text-soil/70 font-ui">
+                        {{if eq .AgentType "human"}}
+                        <span class="inline-block bg-forest-green/10 text-forest-green px-2 py-0.5 rounded text-xs">human</span>
+                        {{else}}
+                        {{.AgentType}}
+                        {{end}}
+                    </td>
                     <td class="px-5 py-3 text-soil/70 font-ui">{{if .HomeOrganization}}{{.HomeOrganization}}{{else}}—{{end}}</td>
                     <td class="px-5 py-3">
                         {{range .AllowedOrganizations}}
@@ -82,7 +101,7 @@
         </table>
     </div>
     {{else}}
-    <p class="text-soil/60 italic">No passports issued yet. Passports let agents travel between organizations.</p>
+    <p class="text-soil/60 italic">No passports issued yet. Passports let humans and agents travel between organizations.</p>
     {{end}}
 </div>
 {{end}}

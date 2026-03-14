@@ -217,6 +217,7 @@ func (srv *Server) handleUserDetail(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handlePassports(w http.ResponseWriter, r *http.Request) {
 	passports, _ := srv.passports.List()
 	orgs, _ := srv.organizations.List()
+	users, _ := srv.users.List()
 
 	srv.render(w, r, "passports.html", pageData{
 		Title: "Passports",
@@ -224,6 +225,7 @@ func (srv *Server) handlePassports(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"Passports":     passports,
 			"Organizations": orgs,
+			"Users":         users,
 		},
 	})
 }
