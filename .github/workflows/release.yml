@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+
+    - name: Get version from tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "version_number=${VERSION#v}" >> $GITHUB_OUTPUT
+
+    - name: Run tests
+      run: go test ./... -v
+
+    - name: Build binaries
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        mkdir -p dist
+
+        GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$VERSION" -o dist/mycelium-linux-amd64 ./cmd/mycelium
+        GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=$VERSION" -o dist/mycelium-linux-arm64 ./cmd/mycelium
+
+        cd dist
+        sha256sum * > SHA256SUMS
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: ${{ steps.get_version.outputs.version }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        files: |
+          dist/mycelium-linux-amd64
+          dist/mycelium-linux-arm64
+          dist/SHA256SUMS
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish to release server
+      env:
+        HYDRARELEASE_TOKEN: ${{ secrets.HYDRARELEASE_PUBLISH_TOKEN }}
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        SERVER="https://releases.experiencenet.com"
+        PROJECT="mycelium"
+        CHANNEL="production"
+
+        for file in dist/*; do
+          [ -f "$file" ] || continue
+          name=$(basename "$file")
+          [ "$name" = "SHA256SUMS" ] && continue
+          echo "Uploading $name..."
+          curl -sf -X POST \
+            -H "Authorization: Bearer $HYDRARELEASE_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$file" \
+            "$SERVER/api/v1/publish/$PROJECT/$CHANNEL/$VERSION/$name"
+        done
+
+        echo "Finalizing..."
+        curl -sf -X POST \
+          -H "Authorization: Bearer $HYDRARELEASE_TOKEN" \
+          "$SERVER/api/v1/publish/$PROJECT/$CHANNEL/$VERSION/finalize"
