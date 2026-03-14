@@ -1,0 +1,88 @@
+{{define "content"}}
+<div class="flex items-center justify-between mb-8">
+    <h1 class="text-2xl font-bold text-canopy">Passports</h1>
+</div>
+
+<div class="bg-forest-card rounded-xl border border-sprout/30 p-6 mb-8">
+    <h2 class="text-lg font-semibold text-canopy mb-4">Issue a passport</h2>
+    <form hx-post="/passports/create" hx-swap="none" class="space-y-4">
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Agent ID</label>
+                <input type="text" name="agent_id" required placeholder="nightwatch"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-48">
+            </div>
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Agent Type</label>
+                <input type="text" name="agent_type" required placeholder="service"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-40">
+            </div>
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Home Organization</label>
+                <select name="home_organization"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy focus:outline-none focus:border-forest-green/50 w-48">
+                    <option value="">None</option>
+                    {{range .Data.Organizations}}
+                    <option value="{{.Slug}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Allowed Organizations (comma-separated slugs)</label>
+                <input type="text" name="allowed_organizations" placeholder="acme,globex"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-64">
+            </div>
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Capabilities (comma-separated)</label>
+                <input type="text" name="capabilities" placeholder="read,write"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-64">
+            </div>
+            <button type="submit"
+                class="font-ui bg-forest-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-forest-green-dark transition-colors">
+                Issue
+            </button>
+        </div>
+    </form>
+</div>
+
+<div id="passport-list" hx-get="/passports" hx-trigger="every 5s" hx-select="#passport-list" hx-swap="outerHTML">
+    {{if .Data.Passports}}
+    <div class="bg-forest-card rounded-xl border border-sprout/30 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-sprout/20">
+                    <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Agent ID</th>
+                    <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Type</th>
+                    <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Home</th>
+                    <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Allowed</th>
+                    <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Capabilities</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Data.Passports}}
+                <tr class="border-b border-sprout/10 last:border-0">
+                    <td class="px-5 py-3 text-canopy font-medium">{{.AgentID}}</td>
+                    <td class="px-5 py-3 text-soil/70 font-ui">{{.AgentType}}</td>
+                    <td class="px-5 py-3 text-soil/70 font-ui">{{if .HomeOrganization}}{{.HomeOrganization}}{{else}}—{{end}}</td>
+                    <td class="px-5 py-3">
+                        {{range .AllowedOrganizations}}
+                        <span class="font-ui inline-block bg-solar-gold/10 text-solar-gold-dark px-2 py-0.5 rounded text-xs mr-1">{{.}}</span>
+                        {{end}}
+                    </td>
+                    <td class="px-5 py-3">
+                        {{range .Capabilities}}
+                        <span class="font-ui inline-block bg-sprout/20 text-canopy px-2 py-0.5 rounded text-xs mr-1">{{.}}</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <p class="text-soil/60 italic">No passports issued yet. Passports let agents travel between organizations.</p>
+    {{end}}
+</div>
+{{end}}

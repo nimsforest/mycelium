@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="flex items-center justify-between mb-8">
+    <h1 class="text-2xl font-bold text-canopy">Organizations</h1>
+</div>
+
+<div class="bg-forest-card rounded-xl border border-sprout/30 p-6 mb-8">
+    <h2 class="text-lg font-semibold text-canopy mb-4">Plant an organization</h2>
+    <form hx-post="/organizations/create" hx-swap="none" class="flex flex-wrap gap-4 items-end">
+        <div>
+            <label class="block text-xs text-soil/70 mb-1 font-ui">Name</label>
+            <input type="text" name="name" required placeholder="Acme Corp"
+                class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-56">
+        </div>
+        <div>
+            <label class="block text-xs text-soil/70 mb-1 font-ui">Slug</label>
+            <input type="text" name="slug" required placeholder="acme" pattern="[a-z0-9-]+"
+                class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-44">
+        </div>
+        <button type="submit"
+            class="font-ui bg-forest-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-forest-green-dark transition-colors">
+            Add
+        </button>
+    </form>
+</div>
+
+<div id="org-list" hx-get="/organizations" hx-trigger="every 5s" hx-select="#org-list" hx-swap="outerHTML">
+    {{if .Data.Organizations}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {{range .Data.Organizations}}
+        <a href="/organizations/{{.Slug}}" class="block bg-forest-card rounded-xl border border-sprout/30 p-5 hover:border-forest-green/50 transition-colors">
+            <h3 class="font-semibold text-canopy mb-1">{{.Name}}</h3>
+            <div class="text-xs text-soil/60 font-ui mb-2">{{.Slug}}</div>
+            {{if .NATSPort}}<div class="text-xs text-soil/50 font-ui">NATS :{{.NATSPort}}</div>{{end}}
+            <div class="text-xs text-soil/40 font-ui mt-2" title="{{formatTimestamp .CreatedAt}}">{{timeAgo .CreatedAt}}</div>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <p class="text-soil/60 italic">No organizations yet. Every forest starts with a single seed.</p>
+    {{end}}
+</div>
+{{end}}

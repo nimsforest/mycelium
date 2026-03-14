@@ -15,6 +15,8 @@ type Config struct {
 	LandServer   string `yaml:"land_server"`
 	BaseNATSPort int    `yaml:"base_nats_port"`
 	BaseLandPort int    `yaml:"base_land_port"`
+	Domain       string `yaml:"domain"`
+	CertDir      string `yaml:"cert_dir"`
 }
 
 func loadConfig(path string) (*Config, error) {

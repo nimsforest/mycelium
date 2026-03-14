@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="mb-8">
+    <h1 class="text-2xl font-bold text-canopy">Overview</h1>
+</div>
+
+<div id="stats" hx-get="/" hx-trigger="every 5s" hx-select="#stats" hx-swap="outerHTML">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+        <div class="bg-forest-card rounded-xl border border-sprout/30 p-5">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="stat-label text-xs text-soil/60 uppercase tracking-wider">Organizations</span>
+            </div>
+            <div class="stat-value text-3xl font-bold text-solar-gold">{{.Data.OrganizationCount}}</div>
+        </div>
+        <div class="bg-forest-card rounded-xl border border-sprout/30 p-5">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="stat-label text-xs text-soil/60 uppercase tracking-wider">Users</span>
+            </div>
+            <div class="stat-value text-3xl font-bold text-solar-gold">{{.Data.UserCount}}</div>
+        </div>
+        <div class="bg-forest-card rounded-xl border border-sprout/30 p-5">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="stat-label text-xs text-soil/60 uppercase tracking-wider">Passports</span>
+            </div>
+            <div class="stat-value text-3xl font-bold text-solar-gold">{{.Data.PassportCount}}</div>
+        </div>
+    </div>
+</div>
+{{end}}

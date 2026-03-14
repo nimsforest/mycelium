@@ -1,0 +1,100 @@
+{{define "content"}}
+<div class="mb-6">
+    <a href="/users" class="text-sm text-forest-green hover:text-forest-green-dark font-ui transition-colors">&larr; Users</a>
+</div>
+
+<div class="mb-8">
+    <h1 class="text-2xl font-bold text-canopy">{{if .Data.User.Name}}{{.Data.User.Name}}{{else}}{{.Data.User.Email}}{{end}}</h1>
+    <div class="text-sm text-soil/60 font-ui mt-1">{{.Data.User.ID}} &middot; {{.Data.User.Email}}</div>
+    <div class="text-xs text-soil/40 font-ui mt-1" title="{{formatTimestamp .Data.User.CreatedAt}}">Joined {{timeAgo .Data.User.CreatedAt}}</div>
+</div>
+
+<div id="user-detail" hx-get="/users/{{.Data.User.ID}}" hx-trigger="every 5s" hx-select="#user-detail" hx-swap="outerHTML">
+
+    <!-- Platform Links -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold text-canopy mb-4">Platform links</h2>
+        {{if .Data.Platforms}}
+        <div class="bg-forest-card rounded-xl border border-sprout/30 overflow-hidden mb-4">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-sprout/20">
+                        <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Platform</th>
+                        <th class="text-left px-5 py-3 text-xs text-soil/60 uppercase tracking-wider font-medium">Platform ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Data.Platforms}}
+                    <tr class="border-b border-sprout/10 last:border-0">
+                        <td class="px-5 py-3 text-canopy font-medium">{{.Platform}}</td>
+                        <td class="px-5 py-3 text-soil/70 font-ui text-xs">{{.PlatformID}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <p class="text-soil/60 italic mb-4">No platform links yet.</p>
+        {{end}}
+
+        <form hx-post="/users/{{.Data.User.ID}}/link" hx-swap="none" class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Platform</label>
+                <input type="text" name="platform" required placeholder="telegram"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-40">
+            </div>
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Platform ID</label>
+                <input type="text" name="platform_id" required placeholder="123456789"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy placeholder-soil/40 focus:outline-none focus:border-forest-green/50 w-48">
+            </div>
+            <button type="submit"
+                class="font-ui bg-forest-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-forest-green-dark transition-colors">
+                Link
+            </button>
+        </form>
+    </div>
+
+    <!-- Memberships -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold text-canopy mb-4">Memberships</h2>
+        {{if .Data.Organizations}}
+        <div class="flex flex-wrap gap-2 mb-4">
+            {{range .Data.Organizations}}
+            <a href="/organizations/{{.}}" class="font-ui inline-block bg-forest-green/10 text-forest-green px-3 py-1 rounded-full text-sm hover:bg-forest-green/20 transition-colors">{{.}}</a>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="text-soil/60 italic mb-4">Not a member of any organization yet.</p>
+        {{end}}
+
+        {{if .Data.AllOrganizations}}
+        <form hx-post="/users/{{.Data.User.ID}}/grant" hx-swap="none" class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Organization</label>
+                <select name="organization_slug" required
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy focus:outline-none focus:border-forest-green/50 w-48">
+                    <option value="">Select...</option>
+                    {{range .Data.AllOrganizations}}
+                    <option value="{{.Slug}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-soil/70 mb-1 font-ui">Role</label>
+                <select name="role"
+                    class="font-ui bg-forest-bg border border-sprout/30 rounded-lg px-3 py-2 text-sm text-canopy focus:outline-none focus:border-forest-green/50 w-36">
+                    <option value="member">member</option>
+                    <option value="admin">admin</option>
+                </select>
+            </div>
+            <button type="submit"
+                class="font-ui bg-forest-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-forest-green-dark transition-colors">
+                Grant
+            </button>
+        </form>
+        {{end}}
+    </div>
+
+</div>
+{{end}}

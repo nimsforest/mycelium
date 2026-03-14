@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,9 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/acme/autocert"
+
 	"github.com/cederikdotcom/hydrarelease/pkg/updater"
 	"github.com/nimsforest/mycelium/internal/identity"
 	"github.com/nimsforest/mycelium/internal/store"
+	"github.com/nimsforest/mycelium/internal/web"
 	"github.com/nimsforest/mycelium/pkg/mycelium"
 	"github.com/spf13/cobra"
 )
@@ -273,6 +277,45 @@ func serveCmd(version string) *cobra.Command {
 					log.Fatalf("server error: %v", err)
 				}
 			}()
+
+			// Dashboard (autocert TLS)
+			if cfg.Domain != "" {
+				webSrv := web.NewServer(s, version)
+
+				certDir := cfg.CertDir
+				if certDir == "" {
+					certDir = "/var/lib/mycelium/certs"
+				}
+
+				manager := &autocert.Manager{
+					Prompt:     autocert.AcceptTOS,
+					Cache:      autocert.DirCache(certDir),
+					HostPolicy: autocert.HostWhitelist(cfg.Domain),
+				}
+
+				go func() {
+					if err := http.ListenAndServe(":80", manager.HTTPHandler(nil)); err != nil {
+						log.Printf("ACME HTTP server error: %v", err)
+					}
+				}()
+
+				tlsSrv := &http.Server{
+					Addr:    ":443",
+					Handler: webSrv,
+					TLSConfig: &tls.Config{
+						GetCertificate: manager.GetCertificate,
+					},
+					ReadTimeout:  10 * time.Second,
+					WriteTimeout: 30 * time.Second,
+					IdleTimeout:  120 * time.Second,
+				}
+				go func() {
+					log.Printf("dashboard at https://%s", cfg.Domain)
+					if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+						log.Printf("TLS server error: %v", err)
+					}
+				}()
+			}
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)

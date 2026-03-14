@@ -5,7 +5,9 @@ go 1.25.7
 require (
 	github.com/cederikdotcom/hydrarelease v1.16.3
 	github.com/nats-io/nats.go v1.48.0
+	github.com/nimsforest/nimsforestwebcomponents v0.7.2
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -16,6 +18,7 @@ require (
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 )

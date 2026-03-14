@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} — Mycelium</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: Georgia, 'Times New Roman', serif; color: #6B5B4E; }
+        h1, h2, h3, h4, h5, h6, nav, .nav-link, button, input, select, label, .font-ui,
+        th, .stat-value, .stat-label { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-forest-bg min-h-screen flex flex-col">
+    <header class="bg-canopy text-white">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div>
+                <a href="/" class="text-xl font-bold tracking-tight hover:text-sprout transition-colors">Mycelium</a>
+                <span class="ml-3 text-sprout text-sm italic" style="font-family: Georgia, serif;">The root network</span>
+            </div>
+            <nav class="flex items-center gap-6 text-sm font-medium">
+                <a href="/organizations" class="nav-link {{if eq .Nav "organizations"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Organizations</a>
+                <a href="/users" class="nav-link {{if eq .Nav "users"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Users</a>
+                <a href="/passports" class="nav-link {{if eq .Nav "passports"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Passports</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-6xl mx-auto px-6 py-8 w-full">
+        {{template "content" .}}
+    </main>
+
+    <footer class="border-t border-sprout/30 py-4">
+        <div class="max-w-6xl mx-auto px-6 text-center text-sm text-soil/60">
+            Mycelium — from root to canopy
+            <span class="ml-2 text-xs text-soil/40">{{.Version}}</span>
+        </div>
+    </footer>
+
+    <script src="/static/htmx.min.js"></script>
+</body>
+</html>
