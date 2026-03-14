@@ -12,14 +12,44 @@
         body { font-family: Georgia, 'Times New Roman', serif; color: #6B5B4E; }
         h1, h2, h3, h4, h5, h6, nav, .nav-link, button, input, select, label, .font-ui,
         th, .stat-value, .stat-label { font-family: 'Inter', sans-serif; }
+
+        /* Utilities missing from pre-compiled nwc Tailwind */
+        .bg-canopy { background-color: #1E3A1C; }
+        .text-canopy { color: #1E3A1C; }
+        .text-sprout { color: #A8D5A2; }
+        .text-solar-gold-dark { color: #c9a029; }
+        .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+        .text-white\/80 { color: rgba(255,255,255,0.8); }
+        .text-soil\/40 { color: rgba(107,91,78,0.4); }
+        .text-soil\/50 { color: rgba(107,91,78,0.5); }
+        .placeholder-soil\/40::placeholder { color: rgba(107,91,78,0.4); }
+        .ml-2 { margin-left: 0.5rem; }
+        .ml-3 { margin-left: 0.75rem; }
+        .mr-1 { margin-right: 0.25rem; }
+        .p-4 { padding: 1rem; }
+        .p-6 { padding: 1.5rem; }
+        .w-36 { width: 9rem; }
+        .w-40 { width: 10rem; }
+        .w-44 { width: 11rem; }
+        .w-48 { width: 12rem; }
+        .w-56 { width: 14rem; }
+        .w-64 { width: 16rem; }
+        .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+        .bg-forest-green\/20 { background-color: rgba(74,168,71,0.2); }
+        .bg-sprout\/20 { background-color: rgba(168,213,162,0.2); }
+        .hover\:text-sprout:hover { color: #A8D5A2; }
+        .hover\:bg-forest-green-dark:hover { background-color: #3d8f3c; }
+        .hover\:text-forest-green-dark:hover { color: #3d8f3c; }
+        .hover\:bg-forest-green\/20:hover { background-color: rgba(74,168,71,0.2); }
+        .last\:border-0:last-child { border-width: 0; }
     </style>
 </head>
 <body class="bg-forest-bg min-h-screen flex flex-col">
     <header class="bg-canopy text-white">
-        <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
                 <a href="/" class="text-xl font-bold tracking-tight hover:text-sprout transition-colors">Mycelium</a>
-                <span class="ml-3 text-sprout text-sm italic" style="font-family: Georgia, serif;">The root network</span>
+                <span class="text-sprout text-sm italic" style="font-family: Georgia, serif;">The root network</span>
             </div>
             <nav class="flex items-center gap-6 text-sm font-medium">
                 <a href="/organizations" class="nav-link {{if eq .Nav "organizations"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Organizations</a>
@@ -29,12 +59,12 @@
         </div>
     </header>
 
-    <main class="flex-1 max-w-6xl mx-auto px-6 py-8 w-full">
+    <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         {{template "content" .}}
     </main>
 
     <footer class="border-t border-sprout/30 py-4">
-        <div class="max-w-6xl mx-auto px-6 text-center text-sm text-soil/60">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-soil/60">
             Mycelium — from root to canopy
             <span class="ml-2 text-xs text-soil/40">{{.Version}}</span>
         </div>
