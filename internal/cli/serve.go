@@ -58,6 +58,19 @@ func serveCmd(version string) *cobra.Command {
 			}
 			defer resolver.Stop()
 
+			// Start Humus consumer for platform link writes
+			js, err := nc.JetStream()
+			if err != nil {
+				log.Printf("warning: failed to get JetStream for consumer: %v", err)
+			} else {
+				consumer := identity.NewConsumer(js, s)
+				if err := consumer.Start(); err != nil {
+					log.Printf("warning: failed to start Humus consumer: %v", err)
+				} else {
+					defer consumer.Stop()
+				}
+			}
+
 			// HTTP API
 			users := store.NewUserStore(s)
 			organizations := store.NewOrganizationStore(s)
