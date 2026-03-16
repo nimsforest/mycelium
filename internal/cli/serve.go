@@ -71,6 +71,12 @@ func serveCmd(version string) *cobra.Command {
 				}
 			}
 
+			// Bootstrap NATS credentials
+			credentials := store.NewCredentialStore(s)
+			if err := credentials.Bootstrap(); err != nil {
+				return fmt.Errorf("failed to bootstrap credentials: %w", err)
+			}
+
 			// HTTP API
 			users := store.NewUserStore(s)
 			organizations := store.NewOrganizationStore(s)
@@ -257,6 +263,16 @@ func serveCmd(version string) *cobra.Command {
 					return
 				}
 				writeJSON(w, http.StatusOK, map[string]any{"passports": list})
+			})
+
+			// NATS auth config
+			mux.HandleFunc("GET /api/nats-config", func(w http.ResponseWriter, r *http.Request) {
+				cfg, err := credentials.GetNATSConfig()
+				if err != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+					return
+				}
+				writeJSON(w, http.StatusOK, cfg)
 			})
 
 			mux.HandleFunc("POST /passports", func(w http.ResponseWriter, r *http.Request) {

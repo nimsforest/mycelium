@@ -58,6 +58,18 @@ type PassportResponse struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
+// PlatformEntry represents a single platform link for a user.
+type PlatformEntry struct {
+	Platform   string `json:"platform"`
+	PlatformID string `json:"platform_id"`
+}
+
+// PlatformsResponse is returned by user platform resolution.
+type PlatformsResponse struct {
+	UserID    string          `json:"user_id"`
+	Platforms []PlatformEntry `json:"platforms"`
+}
+
 // MemberList stores organization member IDs (reverse index).
 type MemberList struct {
 	UserIDs []string `json:"user_ids"`

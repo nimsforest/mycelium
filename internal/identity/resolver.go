@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nimsforest/mycelium/internal/store"
@@ -55,6 +56,13 @@ func (r *Resolver) Start(_ context.Context) error {
 		return fmt.Errorf("failed to subscribe to passport resolve: %w", err)
 	}
 	r.subs = append(r.subs, sub3)
+
+	// User platforms resolution: mycelium.resolve.user.platforms.*
+	sub4, err := r.nc.Subscribe("mycelium.resolve.user.platforms.*", r.handleUserPlatforms)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to user platforms resolve: %w", err)
+	}
+	r.subs = append(r.subs, sub4)
 
 	log.Printf("[Resolver] Listening on mycelium.resolve.>")
 	return nil
@@ -188,6 +196,49 @@ func (r *Resolver) handlePassportResolve(msg *nats.Msg) {
 		Capabilities: passport.Capabilities,
 	}
 
+	data, _ := json.Marshal(resp)
+	msg.Respond(data)
+}
+
+func (r *Resolver) handleUserPlatforms(msg *nats.Msg) {
+	userID := msg.Subject[len("mycelium.resolve.user.platforms."):]
+
+	// Verify user exists
+	if _, err := r.users.Get(userID); err != nil {
+		r.replyError(msg, "user not found")
+		return
+	}
+
+	// Scan all platform keys for this user
+	keys, err := r.store.Keys()
+	if err != nil {
+		r.replyError(msg, "failed to list keys")
+		return
+	}
+
+	var platforms []mycelium.PlatformEntry
+	for _, k := range keys {
+		if !strings.HasPrefix(k, "platforms.") {
+			continue
+		}
+		var link mycelium.PlatformLink
+		if err := r.store.GetJSON(k, &link); err != nil || link.UserID != userID {
+			continue
+		}
+		// key format: platforms.<platform>.<platform_id>
+		parts := strings.SplitN(k, ".", 3)
+		if len(parts) == 3 {
+			platforms = append(platforms, mycelium.PlatformEntry{
+				Platform:   parts[1],
+				PlatformID: parts[2],
+			})
+		}
+	}
+
+	resp := mycelium.PlatformsResponse{
+		UserID:    userID,
+		Platforms: platforms,
+	}
 	data, _ := json.Marshal(resp)
 	msg.Respond(data)
 }

@@ -29,6 +29,7 @@ type Server struct {
 	organizations *store.OrganizationStore
 	memberships   *store.MembershipStore
 	passports     *store.PassportStore
+	credentials   *store.CredentialStore
 	store         *store.Store
 	version       string
 }
@@ -42,6 +43,7 @@ func NewServer(s *store.Store, version string) *Server {
 		organizations: store.NewOrganizationStore(s),
 		memberships:   store.NewMembershipStore(s),
 		passports:     store.NewPassportStore(s),
+		credentials:   store.NewCredentialStore(s),
 		store:         s,
 		version:       version,
 	}
@@ -69,6 +71,7 @@ func (srv *Server) parseTemplates() {
 		"users.html",
 		"user-detail.html",
 		"passports.html",
+		"credentials.html",
 	}
 
 	for _, page := range pages {
@@ -100,6 +103,9 @@ func (srv *Server) routes() {
 	srv.mux.HandleFunc("GET /passports", srv.handlePassports)
 	srv.mux.HandleFunc("POST /passports/create", srv.handlePassportCreate)
 	srv.mux.HandleFunc("POST /passports/{agent_id}/delete", srv.handlePassportDelete)
+	srv.mux.HandleFunc("GET /credentials", srv.handleCredentials)
+	srv.mux.HandleFunc("POST /credentials/create", srv.handleCredentialCreate)
+	srv.mux.HandleFunc("POST /credentials/{pub}/revoke", srv.handleCredentialRevoke)
 }
 
 func (srv *Server) render(w http.ResponseWriter, r *http.Request, page string, pd pageData) {
@@ -128,6 +134,7 @@ func (srv *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	orgs, _ := srv.organizations.List()
 	users, _ := srv.users.List()
 	passports, _ := srv.passports.List()
+	creds, _ := srv.credentials.ListCredentials()
 
 	srv.render(w, r, "index.html", pageData{
 		Title: "Overview",
@@ -136,6 +143,7 @@ func (srv *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			"OrganizationCount": len(orgs),
 			"UserCount":         len(users),
 			"PassportCount":     len(passports),
+			"CredentialCount":   len(creds),
 		},
 	})
 }
@@ -379,6 +387,63 @@ func (srv *Server) handlePassportDelete(w http.ResponseWriter, r *http.Request) 
 
 	log.Printf("dashboard: passport revoked: %s", agentID)
 	w.Header().Set("HX-Redirect", "/passports")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Credential handlers ---
+
+func (srv *Server) handleCredentials(w http.ResponseWriter, r *http.Request) {
+	creds, _ := srv.credentials.ListCredentials()
+	accounts, _ := srv.credentials.ListAccounts()
+
+	srv.render(w, r, "credentials.html", pageData{
+		Title: "Credentials",
+		Nav:   "credentials",
+		Data: map[string]any{
+			"Credentials": creds,
+			"Accounts":    accounts,
+		},
+	})
+}
+
+func (srv *Server) handleCredentialCreate(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	account := strings.TrimSpace(r.FormValue("account"))
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	credsContent, err := srv.credentials.IssueCredential(name, account)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	creds, _ := srv.credentials.ListCredentials()
+	accounts, _ := srv.credentials.ListAccounts()
+
+	srv.render(w, r, "credentials.html", pageData{
+		Title: "Credentials",
+		Nav:   "credentials",
+		Data: map[string]any{
+			"Credentials":  creds,
+			"Accounts":     accounts,
+			"CredsContent": credsContent,
+			"CredsName":    name,
+		},
+	})
+}
+
+func (srv *Server) handleCredentialRevoke(w http.ResponseWriter, r *http.Request) {
+	pub := r.PathValue("pub")
+	if err := srv.credentials.RevokeCredential(pub); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("dashboard: credential revoked: %s", pub)
+	w.Header().Set("HX-Redirect", "/credentials")
 	w.WriteHeader(http.StatusNoContent)
 }
 
