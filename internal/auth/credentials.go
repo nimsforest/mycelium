@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,65 +54,105 @@ type AccountPermissions struct {
 // Service manages NATS operator, account, and user credentials.
 type Service struct {
 	store        *store.Store
+	keysDir      string // disk-based key persistence (survives JetStream namespace changes)
 	operatorName string
 	accounts     map[string]AccountPermissions
 }
 
 // NewService creates a new credential service.
-func NewService(s *store.Store, operatorName string, accounts map[string]AccountPermissions) *Service {
+// keysDir is a directory on disk where operator/account keys are persisted.
+// This ensures keys survive JetStream account namespace transitions
+// (e.g., when NATS switches from $G to TrustedOperators named accounts).
+func NewService(s *store.Store, keysDir, operatorName string, accounts map[string]AccountPermissions) *Service {
 	return &Service{
 		store:        s,
+		keysDir:      keysDir,
 		operatorName: operatorName,
 		accounts:     accounts,
 	}
 }
 
-// Bootstrap generates operator and account NKeys from config, stores in NATS KV.
-// Generates one user .creds per account (for leaf node auth). Idempotent.
+// Bootstrap generates operator and account NKeys, stores in NATS KV and on disk.
+// Keys are persisted to disk so they survive JetStream account namespace changes
+// (when NATS transitions from no-auth to TrustedOperators). Idempotent.
 func (svc *Service) Bootstrap() error {
-	// Ensure operator keys exist
-	_, err := svc.store.Get("operator.keys")
-	if err == store.ErrNotFound {
-		opKP, err := nkeys.CreateOperator()
-		if err != nil {
-			return fmt.Errorf("failed to create operator key: %w", err)
-		}
-		opPub, _ := opKP.PublicKey()
-		opSeed, _ := opKP.Seed()
-
-		if err := svc.store.PutJSON("operator.keys", &KeyPair{
-			PublicKey: opPub,
-			Seed:      string(opSeed),
-		}); err != nil {
-			return fmt.Errorf("failed to store operator keys: %w", err)
-		}
-		log.Printf("[auth] operator bootstrapped: %s", opPub)
-	} else if err != nil {
-		return fmt.Errorf("failed to check operator keys: %w", err)
-	} else {
-		log.Printf("[auth] operator keys already exist, skipping")
+	if err := svc.ensureOperatorKeys(); err != nil {
+		return err
 	}
-
-	// Ensure each configured account has keys
 	for name := range svc.accounts {
-		key := "accounts." + name + ".keys"
-		_, err := svc.store.Get(key)
-		if err == store.ErrNotFound {
-			if err := svc.createAccount(name); err != nil {
-				return fmt.Errorf("failed to create account %s: %w", name, err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("failed to check account %s: %w", name, err)
-		} else {
-			log.Printf("[auth] account %s keys already exist, skipping", name)
+		if err := svc.ensureAccountKeys(name); err != nil {
+			return fmt.Errorf("failed to ensure account %s: %w", name, err)
 		}
 	}
-
 	return nil
 }
 
-// createAccount generates an account key pair and stores it.
-func (svc *Service) createAccount(name string) error {
+// ensureOperatorKeys checks KV → disk → create, in that order.
+func (svc *Service) ensureOperatorKeys() error {
+	kvKey := "operator.keys"
+	diskPath := svc.diskKeyPath("operator.json")
+
+	// 1. Check KV
+	_, err := svc.store.Get(kvKey)
+	if err == nil {
+		log.Printf("[auth] operator keys already exist, skipping")
+		return nil
+	}
+	if err != store.ErrNotFound {
+		return fmt.Errorf("failed to check operator keys: %w", err)
+	}
+
+	// 2. Check disk (restore to KV if found)
+	if kp, err := svc.readKeyFromDisk(diskPath); err == nil {
+		if err := svc.store.PutJSON(kvKey, kp); err != nil {
+			return fmt.Errorf("failed to restore operator keys to KV: %w", err)
+		}
+		log.Printf("[auth] operator keys restored from disk: %s", kp.PublicKey)
+		return nil
+	}
+
+	// 3. Create new keys (save to both KV and disk)
+	opKP, err := nkeys.CreateOperator()
+	if err != nil {
+		return fmt.Errorf("failed to create operator key: %w", err)
+	}
+	opPub, _ := opKP.PublicKey()
+	opSeed, _ := opKP.Seed()
+
+	kp := &KeyPair{PublicKey: opPub, Seed: string(opSeed)}
+	if err := svc.store.PutJSON(kvKey, kp); err != nil {
+		return fmt.Errorf("failed to store operator keys: %w", err)
+	}
+	svc.writeKeyToDisk(diskPath, kp)
+	log.Printf("[auth] operator bootstrapped: %s", opPub)
+	return nil
+}
+
+// ensureAccountKeys checks KV → disk → create, in that order.
+func (svc *Service) ensureAccountKeys(name string) error {
+	kvKey := "accounts." + name + ".keys"
+	diskPath := svc.diskKeyPath("account-" + name + ".json")
+
+	// 1. Check KV
+	_, err := svc.store.Get(kvKey)
+	if err == nil {
+		log.Printf("[auth] account %s keys already exist, skipping", name)
+		return nil
+	}
+	if err != store.ErrNotFound {
+		return fmt.Errorf("failed to check account %s: %w", name, err)
+	}
+
+	// 2. Check disk (restore to KV if found)
+	if kp, err := svc.readKeyFromDisk(diskPath); err == nil {
+		if err := svc.store.PutJSON(kvKey, kp); err != nil {
+			return fmt.Errorf("failed to restore account %s keys to KV: %w", name, err)
+		}
+		log.Printf("[auth] account %s keys restored from disk: %s", name, kp.PublicKey)
+		return nil
+	}
+
+	// 3. Create new keys (save to both KV and disk)
 	accKP, err := nkeys.CreateAccount()
 	if err != nil {
 		return fmt.Errorf("failed to create account key: %w", err)
@@ -117,14 +160,50 @@ func (svc *Service) createAccount(name string) error {
 	accPub, _ := accKP.PublicKey()
 	accSeed, _ := accKP.Seed()
 
-	if err := svc.store.PutJSON("accounts."+name+".keys", &KeyPair{
-		PublicKey: accPub,
-		Seed:      string(accSeed),
-	}); err != nil {
+	kp := &KeyPair{PublicKey: accPub, Seed: string(accSeed)}
+	if err := svc.store.PutJSON(kvKey, kp); err != nil {
 		return fmt.Errorf("failed to store account keys: %w", err)
 	}
+	svc.writeKeyToDisk(diskPath, kp)
 	log.Printf("[auth] account bootstrapped: %s (%s)", name, accPub)
 	return nil
+}
+
+// diskKeyPath returns the file path for persisting a key on disk.
+func (svc *Service) diskKeyPath(filename string) string {
+	return filepath.Join(svc.keysDir, filename)
+}
+
+// readKeyFromDisk reads a KeyPair from a disk file.
+func (svc *Service) readKeyFromDisk(path string) (*KeyPair, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var kp KeyPair
+	if err := json.Unmarshal(data, &kp); err != nil {
+		return nil, err
+	}
+	if kp.PublicKey == "" || kp.Seed == "" {
+		return nil, fmt.Errorf("incomplete key data")
+	}
+	return &kp, nil
+}
+
+// writeKeyToDisk persists a KeyPair to a disk file.
+func (svc *Service) writeKeyToDisk(path string, kp *KeyPair) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		log.Printf("[auth] warning: failed to create keys dir: %v", err)
+		return
+	}
+	data, err := json.Marshal(kp)
+	if err != nil {
+		log.Printf("[auth] warning: failed to marshal key: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		log.Printf("[auth] warning: failed to write key to disk: %v", err)
+	}
 }
 
 // IssueCredential generates a user NKey pair, signs a JWT with the account key,
