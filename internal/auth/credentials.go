@@ -292,14 +292,17 @@ func (svc *Service) GetNATSConfig() (*NATSConfig, error) {
 		accClaims.DefaultPermissions.Pub.Allow.Add("_INBOX.>")
 		accClaims.DefaultPermissions.Sub.Allow.Add("_INBOX.>")
 
-		// Enable JetStream for all accounts (-1 = unlimited).
+		// Enable JetStream for all accounts except the system account (-1 = unlimited).
 		// Required when the NATS server runs with TrustedOperators.
-		accClaims.Limits.JetStreamLimits = jwt.JetStreamLimits{
-			MemoryStorage: -1,
-			DiskStorage:   -1,
-			Streams:       -1,
-			Consumer:      -1,
-			MaxAckPending: -1,
+		// The system account is used for internal NATS plumbing and must NOT have JetStream.
+		if accName != "system" {
+			accClaims.Limits.JetStreamLimits = jwt.JetStreamLimits{
+				MemoryStorage: -1,
+				DiskStorage:   -1,
+				Streams:       -1,
+				Consumer:      -1,
+				MaxAckPending: -1,
+			}
 		}
 
 		// Embed revocations
