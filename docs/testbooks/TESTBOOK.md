@@ -85,9 +85,11 @@ ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"default\":\"
 - [ ] Shows export with subject `land.status.>`
 - [ ] Shows import with subject `tap.landregistry.>` referencing the organisationland account's public key
 
-## Test 4: Issue credential via API
+## Test 4: Issue credentials via API
 
-**Goal**: Verify credentials can be issued and save them for later tests.
+**Goal**: Verify credentials can be issued. Issue a default credential (for pub/sub tests) and a system credential (for server inspection).
+
+Default credential:
 
 ```bash
 ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
@@ -98,13 +100,23 @@ ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
 - [ ] File contains `BEGIN NATS USER JWT`
 - [ ] File contains `BEGIN USER NKEY SEED`
 
-Verify the credential works from the tester's machine:
+System credential (for server info, leaf node reports):
+
+```bash
+ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/system \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\": \"testbook-system\"}' | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g'" > /tmp/testbook-system.creds
+```
+
+Verify both credentials work from the tester's machine:
 
 ```bash
 nats pub test.connectivity '{"from": "tester"}' --server $NATS_HUB --creds /tmp/testbook-default.creds
+nats server info --server $NATS_HUB --creds /tmp/testbook-system.creds
 ```
 
-- [ ] Publish succeeds (confirms remote NATS connectivity with credentials)
+- [ ] Default publish succeeds
+- [ ] Server info shows server version and `Auth Required: true`
 
 ## Test 5: Issue credential via dashboard
 
@@ -154,7 +166,7 @@ ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
 **Goal**: Verify the spoke (land-nimsforest-one) is connected to the hub via leaf node.
 
 ```bash
-ssh root@$HUB "curl -s http://127.0.0.1:8222/leafz"
+nats server report leafnodes --server $NATS_HUB --creds /tmp/testbook-system.creds
 ```
 
 - [ ] Shows a leaf from `46.225.164.179` (land-nimsforest-one)
@@ -165,10 +177,10 @@ ssh root@$HUB "curl -s http://127.0.0.1:8222/leafz"
 **Goal**: Verify the hub forest is using TrustedOperators auth from mycelium.
 
 ```bash
-ssh root@$HUB "curl -s http://127.0.0.1:8222/varz | grep auth_required"
+nats server info --server $NATS_HUB --creds /tmp/testbook-system.creds
 ```
 
-- [ ] Shows `"auth_required": true`
+- [ ] Shows `Auth Required: true`
 
 ## Test 9: Cross-account export/import — spoke to hub
 
@@ -340,7 +352,7 @@ ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"name\":\"testbook-la
 Remove local test credentials:
 
 ```bash
-rm -f /tmp/testbook-default.creds /tmp/testbook-narrow.creds /tmp/testbook-revoke.creds /tmp/testbook-revoke-prop.creds
+rm -f /tmp/testbook-default.creds /tmp/testbook-system.creds /tmp/testbook-narrow.creds /tmp/testbook-revoke.creds /tmp/testbook-revoke-prop.creds
 ```
 
 Revoke test credentials via dashboard (`ssh -L 8090:localhost:8090 root@$HUB`, then browse to `http://localhost:8090/dashboard/`) — remove any credentials named `testbook-*`, `dashboard-test`, `narrow-test`, `revoke-*`.
