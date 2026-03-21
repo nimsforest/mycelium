@@ -129,6 +129,7 @@ func serveCmd(version string) *cobra.Command {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 					return
 				}
+					_ = nc.Publish("mycelium.auth.updated", []byte(`{"event":"credential_issued"}`))
 				writeJSON(w, http.StatusCreated, map[string]string{"credentials": credsContent})
 			})
 
@@ -139,6 +140,7 @@ func serveCmd(version string) *cobra.Command {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 					return
 				}
+					_ = nc.Publish("mycelium.auth.updated", []byte(`{"event":"credential_revoked"}`))
 				writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 			})
 
