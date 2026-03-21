@@ -8,21 +8,28 @@ Manual test procedures for verifying mycelium NATS auth service.
 
 | Environment | Hub | Spoke | How to run commands |
 |-------------|-----|-------|---------------------|
-| **Production** | land-shared-one (178.104.70.180) | land-nimsforest-one (46.225.164.179) | `ssh root@<ip> "<command>"` |
+| **Production** | land-shared-one (178.104.70.180) | land-nimsforest-one (46.225.164.179) | See below |
 
 Set these variables for the rest of the testbook:
 
 ```bash
 HUB=178.104.70.180      # land-shared-one
 SPOKE=46.225.164.179     # land-nimsforest-one
+NATS_HUB=nats://$HUB:4222
 ```
 
-### Available tools on production servers
+### Prerequisites on the tester's machine
 
-- `curl` — HTTP requests
-- `nats` — NATS CLI (requires credentials for authenticated NATS)
-- `grep`, `awk`, `sed`, `cut` — text processing
-- `docker` — container management
+- `nats` CLI (`go install github.com/nats-io/natscli/nats@latest`)
+- `curl`
+- `ssh` access to hub and spoke as root
+- `base64`, `grep`, `cut` (standard shell tools)
+
+### What runs where
+
+- **SSH to hub/spoke**: admin ops that need localhost access (mycelium API on :8090, docker, NATS monitoring on :8222)
+- **Local `nats` CLI**: all pub/sub/subscribe commands connect remotely to `$NATS_HUB` using `.creds` files
+- **Local shell tools**: JWT inspection via `base64 -d`
 
 ## Test 1: Mycelium health
 
@@ -58,9 +65,9 @@ ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oE '\"(default|nim
 
 ## Test 3: Account JWT contents
 
-**Goal**: Verify account JWTs contain correct permissions and exports/imports.
+**Goal**: Verify account JWTs contain correct exports/imports.
 
-Decode the organisationland account to check exports/imports:
+Decode the organisationland account:
 
 ```bash
 ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"organisationland\":\"\\K[^\"]+' | cut -d. -f2 | base64 -d 2>/dev/null"
@@ -80,30 +87,30 @@ ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"default\":\"
 
 ## Test 4: Issue credential via API
 
-**Goal**: Verify credentials can be issued.
+**Goal**: Verify credentials can be issued and save them for later tests.
 
 ```bash
 ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
   -H 'Content-Type: application/json' \
-  -d '{\"name\": \"testbook-default\"}'"
+  -d '{\"name\": \"testbook-hub\"}' | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g'" > /tmp/testbook-default.creds
 ```
 
-- [ ] Response contains `BEGIN NATS USER JWT`
-- [ ] Response contains `BEGIN USER NKEY SEED`
+- [ ] File contains `BEGIN NATS USER JWT`
+- [ ] File contains `BEGIN USER NKEY SEED`
 
-Save a default credential for later tests:
+Verify the credential works from the tester's machine:
 
 ```bash
-ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
-  -H 'Content-Type: application/json' \
-  -d '{\"name\": \"testbook-hub\"}' | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/default.creds"
+nats pub test.connectivity '{"from": "tester"}' --server $NATS_HUB --creds /tmp/testbook-default.creds
 ```
+
+- [ ] Publish succeeds (confirms remote NATS connectivity with credentials)
 
 ## Test 5: Issue credential via dashboard
 
 **Goal**: Verify the web dashboard works.
 
-1. Open `http://178.104.70.180:8090/dashboard/` in a browser (or via SSH tunnel: `ssh -L 8090:localhost:8090 root@178.104.70.180`)
+1. Open via SSH tunnel: `ssh -L 8090:localhost:8090 root@$HUB`, then browse to `http://localhost:8090/dashboard/`
 
 2. **Verify index page**:
    - [ ] Shows operator status: `active`
@@ -124,23 +131,23 @@ ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
 
 **Goal**: Verify credential revocation works.
 
-First, issue a throwaway credential:
+Issue a throwaway credential and extract its public key:
 
 ```bash
 ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
   -H 'Content-Type: application/json' \
-  -d '{\"name\": \"revoke-test\"}'"
+  -d '{\"name\": \"revoke-test\"}' | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g'" > /tmp/testbook-revoke.creds
+
+head -2 /tmp/testbook-revoke.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null | grep -oP '"sub":"\K[^"]*'
 ```
 
-Extract the public key from the response (look for the `U` key in the credentials field), then revoke it:
+Revoke it (replace `<PUBLIC_KEY>` with the output above):
 
 ```bash
 ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
 ```
 
 - [ ] Returns `{"status":"revoked"}`
-
-Or use the dashboard: click "revoke" next to the credential in the Credentials page.
 
 ## Test 7: Leaf node connectivity
 
@@ -151,7 +158,7 @@ ssh root@$HUB "curl -s http://127.0.0.1:8222/leafz"
 ```
 
 - [ ] Shows a leaf from `46.225.164.179` (land-nimsforest-one)
-- [ ] Leaf is associated with an account (the organisationland account's public key)
+- [ ] Leaf is associated with the organisationland account's public key
 
 ## Test 8: Hub auth is active
 
@@ -167,13 +174,13 @@ ssh root@$HUB "curl -s http://127.0.0.1:8222/varz | grep auth_required"
 
 **Goal**: Verify `tap.landregistry.>` flows from organisationland (spoke) to default (hub) via export/import.
 
-Terminal A — subscribe on the hub (using default account credentials):
+Terminal A — subscribe from tester's machine using default account credentials:
 
 ```bash
-ssh root@$HUB "nats sub 'tap.landregistry.>' --count 1 --creds /tmp/default.creds"
+nats sub 'tap.landregistry.>' --count 1 --server $NATS_HUB --creds /tmp/testbook-default.creds
 ```
 
-Terminal B — publish from the spoke:
+Terminal B — publish from the spoke (spoke's local NATS has no auth):
 
 ```bash
 ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}'"
@@ -186,16 +193,16 @@ ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}'"
 
 **Goal**: Verify `land.status.>` flows from default (hub) to organisationland (spoke) via export/import.
 
-Terminal A — subscribe on the spoke:
+Terminal A — subscribe on the spoke (spoke's local NATS has no auth):
 
 ```bash
 ssh root@$SPOKE "nats sub 'land.status.>' --count 1"
 ```
 
-Terminal B — publish from the hub (using default account credentials):
+Terminal B — publish from tester's machine using default account credentials:
 
 ```bash
-ssh root@$HUB "nats pub land.status.test '{\"status\": \"ok\"}' --creds /tmp/default.creds"
+nats pub land.status.test '{"status": "ok"}' --server $NATS_HUB --creds /tmp/testbook-default.creds
 ```
 
 - [ ] Terminal A on spoke receives the message
@@ -211,10 +218,10 @@ Terminal A — subscribe on the spoke for a subject NOT in imports:
 ssh root@$SPOKE "timeout 5 nats sub 'song.telegram.>' --count 1; echo 'TIMED OUT (expected)'"
 ```
 
-Terminal B — publish from the hub on default account:
+Terminal B — publish from tester's machine on default account:
 
 ```bash
-ssh root@$HUB "nats pub song.telegram.send '{\"test\": true}' --creds /tmp/default.creds"
+nats pub song.telegram.send '{"test": true}' --server $NATS_HUB --creds /tmp/testbook-default.creds
 ```
 
 - [ ] Spoke subscriber times out — message does NOT cross accounts
@@ -223,25 +230,25 @@ ssh root@$HUB "nats pub song.telegram.send '{\"test\": true}' --creds /tmp/defau
 
 **Goal**: Verify that only permitted subjects cross from spoke to hub. The spoke's local NATS does not enforce per-user ACLs — enforcement happens at the leaf node boundary between accounts.
 
-Permitted subject — subscribe on hub, publish from spoke:
+Permitted subject — subscribe from tester's machine, publish from spoke:
 
 ```bash
-ssh root@$HUB "nats sub 'tap.landregistry.>' --count 1 --creds /tmp/default.creds" &
+nats sub 'tap.landregistry.>' --count 1 --server $NATS_HUB --creds /tmp/testbook-default.creds &
 sleep 2
 ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}'"
 ```
 
-- [ ] Hub receives the message (export/import allows it)
+- [ ] Tester receives the message (export/import allows it)
 
-Non-permitted subject — subscribe on hub, publish from spoke:
+Non-permitted subject — subscribe from tester's machine, publish from spoke:
 
 ```bash
-ssh root@$HUB "timeout 5 nats sub 'forest.land.>' --count 1 --creds /tmp/default.creds; echo 'TIMED OUT (expected)'" &
+timeout 5 nats sub 'forest.land.>' --count 1 --server $NATS_HUB --creds /tmp/testbook-default.creds; echo 'TIMED OUT (expected)' &
 sleep 2
 ssh root@$SPOKE "nats pub forest.land.status '{\"test\": true}'"
 ```
 
-- [ ] Hub does NOT receive the message (no export/import for this subject)
+- [ ] Tester does NOT receive the message (no export/import for this subject)
 
 ## Test 13: Per-credential permission overrides
 
@@ -253,26 +260,26 @@ Issue a credential with narrower permissions than the account default:
 ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
   -H 'Content-Type: application/json' \
   -d '{\"name\": \"narrow-test\", \"publish\": [\"land.status.>\"], \"subscribe\": [\"land.status.>\"]}' \
-  | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/narrow.creds"
+  | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g'" > /tmp/testbook-narrow.creds
 ```
 
-Test with the narrowed credential:
+Test from the tester's machine:
 
 ```bash
 # Should succeed — in the credential's publish list
-ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/narrow.creds 2>&1"
+nats pub land.status.test '{"ok": true}' --server $NATS_HUB --creds /tmp/testbook-narrow.creds
 
 # Should be DENIED — not in the credential's publish list (even though account allows it)
-ssh root@$HUB "nats pub tap.landregistry.lands.create '{\"test\": true}' --creds /tmp/narrow.creds 2>&1"
+nats pub tap.landregistry.lands.create '{"test": true}' --server $NATS_HUB --creds /tmp/testbook-narrow.creds
 ```
 
 - [ ] `land.status.test` publish succeeds
-- [ ] `tap.landregistry.lands.create` publish is denied
+- [ ] `tap.landregistry.lands.create` publish is denied (permissions violation)
 
 Decode the credential JWT to confirm:
 
 ```bash
-ssh root@$HUB "head -2 /tmp/narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null"
+head -2 /tmp/testbook-narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null
 ```
 
 - [ ] Pub allow list contains only `_INBOX.>` and `land.status.>`
@@ -287,25 +294,25 @@ ssh root@$HUB "head -2 /tmp/narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/
    ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
      -H 'Content-Type: application/json' \
      -d '{\"name\": \"revoke-prop-test\"}' \
-     | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/revoke-test.creds"
+     | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g'" > /tmp/testbook-revoke-prop.creds
    ```
 
-2. Verify it works:
+2. Verify it works from the tester's machine:
    ```bash
-   ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/revoke-test.creds"
+   nats pub land.status.test '{"ok": true}' --server $NATS_HUB --creds /tmp/testbook-revoke-prop.creds
    ```
    - [ ] Publish succeeds
 
 3. Extract public key and revoke:
    ```bash
-   ssh root@$HUB "head -2 /tmp/revoke-test.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null | grep -oP '\"sub\":\"\\K[^\"]*'"
+   head -2 /tmp/testbook-revoke-prop.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null | grep -oP '"sub":"\K[^"]*'
    ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
    ```
    - [ ] Returns `{"status":"revoked"}`
 
 4. Wait 60 seconds for hub auth refresh, then retry:
    ```bash
-   ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/revoke-test.creds"
+   nats pub land.status.test '{"ok": true}' --server $NATS_HUB --creds /tmp/testbook-revoke-prop.creds
    ```
    - [ ] Publish fails with authorization error
 
@@ -313,27 +320,27 @@ ssh root@$HUB "head -2 /tmp/narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/
 
 **Goal**: End-to-end test that a land creation request from spoke reaches landregistry on hub.
 
-Terminal A — on hub, watch landregistry logs:
+Terminal A — subscribe from tester's machine on the hub's default account:
 
 ```bash
-ssh root@$HUB "docker logs -f landregistry 2>&1 | grep -i 'tap.landregistry'"
+nats sub 'tap.landregistry.>' --count 1 --server $NATS_HUB --creds /tmp/testbook-default.creds
 ```
 
-Terminal B — from spoke, publish:
+Terminal B — publish from spoke:
 
 ```bash
 ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"name\":\"testbook-land\",\"organization\":\"nimsforest\"}'"
 ```
 
-- [ ] Hub landregistry logs show the received message
+- [ ] Tester receives the message on `tap.landregistry.lands.create`
 - [ ] Payload matches what was sent
 
 ## Cleanup
 
-Remove test credentials created during this testbook:
+Remove local test credentials:
 
 ```bash
-ssh root@$HUB "rm -f /tmp/default.creds /tmp/narrow.creds /tmp/revoke-test.creds"
+rm -f /tmp/testbook-default.creds /tmp/testbook-narrow.creds /tmp/testbook-revoke.creds /tmp/testbook-revoke-prop.creds
 ```
 
-Revoke test credentials via dashboard at `http://178.104.70.180:8090/dashboard/` — remove any credentials named `testbook-*`, `dashboard-test`, `narrow-test`, `revoke-prop-test`.
+Revoke test credentials via dashboard (`ssh -L 8090:localhost:8090 root@$HUB`, then browse to `http://localhost:8090/dashboard/`) — remove any credentials named `testbook-*`, `dashboard-test`, `narrow-test`, `revoke-*`.
