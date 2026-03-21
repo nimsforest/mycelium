@@ -2,182 +2,151 @@
 
 ## Overview
 
-Mycelium is the central identity service for NimsForest. It manages organizations, users, platform links, and passports via a NATS JetStream KV store.
+Mycelium is the NATS TrustedOperators auth service for NimsForest. It manages operator and account NKeys, issues user credentials (.creds files), and serves NATS auth config (JWTs) for hub and spoke forest servers.
 
-- **Server**: nimsforest (46.225.173.0)
-- **JSON API**: :8090 (internal, no TLS)
-- **Dashboard**: https://mycelium.nimsforest.com (autocert TLS on :443)
-- **Binary**: `/usr/local/bin/mycelium`
-- **Config**: `/etc/mycelium/mycelium.yaml`
-- **Cert cache**: `/var/lib/mycelium/certs`
-- **Systemd**: `mycelium.service`
-- **User**: `mycelium:mycelium`
-- **KV bucket**: `MYCELIUM_SOIL` on root NATS JetStream
+- **Server**: land-shared-one (178.104.70.180)
+- **Deployment**: Docker container `mycelium`, host networking
+- **HTTP API**: port 8090
+- **Dashboard**: port 8090 at `/dashboard/`
+- **Config**: `/opt/mycelium/config.yaml` (bind-mounted)
+- **Data**: `/var/lib/mycelium/` (bind-mounted, contains keys + credentials)
+- **KV bucket**: `MYCELIUM_SOIL` on NATS JetStream
 
 ## Deploy
 
-Cross-compile, upload, restart:
+Cross-compile, upload, rebuild container, restart:
 
 ```bash
 cd /home/claude-user/mycelium
 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=v0.X.X" -o /tmp/mycelium-linux-amd64 ./cmd/mycelium/
-scp /tmp/mycelium-linux-amd64 root@46.225.173.0:/tmp/mycelium-new
-ssh root@46.225.173.0 "systemctl stop mycelium && mv /tmp/mycelium-new /usr/local/bin/mycelium && chmod +x /usr/local/bin/mycelium && systemctl start mycelium"
+scp /tmp/mycelium-linux-amd64 root@178.104.70.180:/opt/mycelium/mycelium
+ssh root@178.104.70.180 "cd /opt/mycelium && docker build -t mycelium . && docker rm -f mycelium && docker run -d --name mycelium --network host -v /opt/mycelium/config.yaml:/etc/mycelium/config.yaml:ro -v /var/lib/mycelium:/var/lib/mycelium mycelium"
 rm /tmp/mycelium-linux-amd64
 ```
 
 Verify:
 
 ```bash
-ssh root@46.225.173.0 "systemctl status mycelium --no-pager"
-ssh root@46.225.173.0 "curl -sS localhost:8090/health"
-curl -sS https://mycelium.nimsforest.com/
+ssh root@178.104.70.180 "docker logs --tail 20 mycelium"
+ssh root@178.104.70.180 "curl -s localhost:8090/health"
 ```
 
 ## CLI Commands
 
 ```
-mycelium serve --config /etc/mycelium/mycelium.yaml
-mycelium create-organization <name> --slug <slug>
-mycelium create-user <email> [--name <name>]
-mycelium link-platform <user_id> <platform> <platform_id>
-mycelium grant-passport <user_id> <org_slug>
-mycelium provision <org_slug>
-mycelium list-organizations
-mycelium list-users
-mycelium update
-mycelium check-update
+mycelium serve --config /etc/mycelium/config.yaml
 mycelium version
 ```
 
 ## Config
 
-`/etc/mycelium/mycelium.yaml`:
+`/opt/mycelium/config.yaml` (on land-shared-one):
 
 ```yaml
 listen: ":8090"
 nats_url: "nats://127.0.0.1:4222"
-forest_server: "46.225.173.0"
-land_server: "46.225.164.179"
-base_nats_port: 4222
-base_land_port: 8080
-domain: "mycelium.nimsforest.com"
-cert_dir: "/var/lib/mycelium/certs"
+data_dir: "/var/lib/mycelium"
+operator_name: "nimsforest"
+accounts:
+  default:
+    publish: [">"]
+    subscribe: [">"]
+    exports:
+      - name: land-status
+        subject: "land.status.>"
+        type: stream
+    imports:
+      - name: org-provisioning
+        subject: "tap.landregistry.>"
+        account: organisationland
+        type: stream
+  system:
+    publish: [">"]
+    subscribe: [">"]
+  nimsforest:
+    publish:
+      - "tap.landregistry.>"
+      - "forest.land.>"
+    subscribe:
+      - "land.status.>"
+      - "cloud.>"
+  organisationland:
+    publish:
+      - "tap.landregistry.lands.create"
+      - "tap.landregistry.lands.*.delete"
+      - "_INBOX.>"
+    subscribe:
+      - "land.status.>"
+      - "_INBOX.>"
+    exports:
+      - name: org-provisioning
+        subject: "tap.landregistry.>"
+        type: stream
+    imports:
+      - name: land-status
+        subject: "land.status.>"
+        account: default
+        type: stream
 ```
 
 | Field | Purpose | Default |
 |-------|---------|---------|
-| `listen` | JSON API bind address | `:8090` |
+| `listen` | HTTP API bind address | `:8090` |
 | `nats_url` | NATS server URL | `nats://127.0.0.1:4222` |
-| `forest_server` | SSH target for forest provisioning | — |
-| `land_server` | SSH target for land provisioning | — |
-| `base_nats_port` | Starting NATS port for organizations | `4222` |
-| `base_land_port` | Starting land port for organizations | `8080` |
-| `domain` | Dashboard domain (enables TLS on :443) | — |
-| `cert_dir` | Let's Encrypt cert cache directory | `/var/lib/mycelium/certs` |
+| `data_dir` | Persistent data directory (keys, credentials) | `/var/lib/mycelium` |
+| `operator_name` | Name for the NATS operator JWT | `nimsforest` |
+| `accounts` | Map of account name → permissions (publish, subscribe, exports, imports) | single `default` account |
 
-## Systemd Service
-
-`/etc/systemd/system/mycelium.service`:
-
-- Runs as `mycelium:mycelium` user
-- `AmbientCapabilities=CAP_NET_BIND_SERVICE` for ports 80/443
-- Auto-restarts on failure (5s delay)
-- Hardened: `NoNewPrivileges`, `ProtectHome`, etc.
-
-```bash
-systemctl status mycelium
-systemctl restart mycelium
-journalctl -u mycelium -f
-```
-
-## Infrastructure
-
-### DNS
-
-`mycelium.nimsforest.com` A record → 46.225.173.0
-
-```bash
-export HCLOUD_CONTEXT=nimsforest
-hcloud zone rrset list nimsforest.com --type A
-```
-
-### Firewall
-
-Hetzner firewall `firewall-1` and UFW both allow ports 80/tcp and 443/tcp.
-
-```bash
-# UFW
-ssh root@46.225.173.0 "ufw status"
-
-# Hetzner
-export HCLOUD_CONTEXT=nimsforest
-hcloud firewall describe firewall-1
-```
-
-### NATS Subjects
-
-Mycelium listens on NATS request/reply:
-
-| Subject | Purpose |
-|---------|---------|
-| `mycelium.resolve.platform.<platform>` | Resolve platform ID → user |
-| `mycelium.resolve.user.<user_id>` | Resolve user ID → user + organizations |
-| `mycelium.resolve.passport.<agent_id>` | Check passport access for an agent |
-
-### KV Keys
+## KV Keys
 
 All data in `MYCELIUM_SOIL` bucket:
 
 | Key pattern | Value |
 |------------|-------|
-| `organizations.<slug>` | Organization JSON |
-| `users.<user_id>` | User JSON |
-| `memberships.<slug>.<user_id>` | Membership JSON |
-| `organization_members.<slug>` | MemberList (reverse index) |
-| `user_organizations.<user_id>` | OrganizationList (reverse index) |
-| `passports.<agent_id>` | Passport JSON |
-| `platforms.<platform>.<platform_id>` | PlatformLink JSON |
+| `operator.keys` | Operator KeyPair (public_key, seed) |
+| `accounts.<name>.keys` | Account KeyPair (public_key, seed) |
+| `credentials.<public_key>` | Credential metadata (name, account, public_key, created_at) |
+| `revocations.<account>` | Revocation list (array of revoked public keys + timestamps) |
 
-Inspect with `nats` CLI on the nimsforest server:
+Note: bare `nats` CLI on land-shared-one requires auth. Use credentials or access NATS via mycelium API.
 
-```bash
-ssh root@46.225.173.0
-nats kv ls MYCELIUM_SOIL
-nats kv get MYCELIUM_SOIL organizations.nimsforest
-```
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Health check |
+| `GET` | `/api/nats-config` | Get operator + account JWTs for NATS resolver |
+| `POST` | `/api/credentials/{account}` | Issue a new credential |
+| `DELETE` | `/api/credentials/{publickey}` | Revoke a credential |
+| `GET` | `/dashboard/` | Web dashboard |
 
 ## Troubleshooting
 
-### Dashboard not loading
-
-1. Check service: `systemctl status mycelium`
-2. Check logs: `journalctl -u mycelium --since '5 min ago'`
-3. Check ports: `ss -tlnp | grep -E ':(80|443) '`
-4. Check certs: `ls -la /var/lib/mycelium/certs/`
-5. Check DNS: `dig mycelium.nimsforest.com`
-
-### Permission denied on :80/:443
-
-Ensure `AmbientCapabilities=CAP_NET_BIND_SERVICE` is in the service file:
+### Container not starting
 
 ```bash
-grep AmbientCapabilities /etc/systemd/system/mycelium.service
+ssh root@178.104.70.180 "docker ps -a | grep mycelium"
+ssh root@178.104.70.180 "docker logs mycelium"
 ```
 
 ### NATS connection failed
 
-Verify NATS is running and accessible:
+NATS is embedded in the forest container on land-shared-one:
 
 ```bash
-systemctl status nimsforest
-nats server ping
+ssh root@178.104.70.180 "docker ps | grep nimsforest"
+ssh root@178.104.70.180 "ss -tlnp | grep 4222"
 ```
 
-### Auto-update
+### Dashboard not loading
 
-Mycelium checks for updates every 6 hours from releases.experiencenet.com. Manual update:
+Check mycelium is running and port is open:
 
 ```bash
-ssh root@46.225.173.0 "mycelium update"
+ssh root@178.104.70.180 "curl -s localhost:8090/health"
+ssh root@178.104.70.180 "ss -tlnp | grep 8090"
 ```
+
+### Keys lost after container recreate
+
+Keys are persisted in two places: NATS KV (`MYCELIUM_SOIL`) and on disk (`/var/lib/mycelium/keys/`). As long as either the NATS data or the bind-mounted data directory survives, keys are recovered automatically on startup.

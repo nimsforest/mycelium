@@ -4,39 +4,17 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nimsforest/mycelium/internal/auth"
 	"gopkg.in/yaml.v3"
 )
 
-// ExportConfig defines a NATS account export.
-type ExportConfig struct {
-	Name    string `yaml:"name"`
-	Subject string `yaml:"subject"`
-	Type    string `yaml:"type"` // "stream" or "service"
-}
-
-// ImportConfig defines a NATS account import from another account.
-type ImportConfig struct {
-	Name    string `yaml:"name"`
-	Subject string `yaml:"subject"`
-	Account string `yaml:"account"` // account name (resolved to public key at JWT build time)
-	Type    string `yaml:"type"`    // "stream" or "service"
-}
-
-// AccountPermissions defines the NATS subject permissions for an account.
-type AccountPermissions struct {
-	Publish   []string       `yaml:"publish"`
-	Subscribe []string       `yaml:"subscribe"`
-	Exports   []ExportConfig `yaml:"exports"`
-	Imports   []ImportConfig `yaml:"imports"`
-}
-
 // Config holds mycelium configuration.
 type Config struct {
-	Listen       string                        `yaml:"listen"`
-	NATSURL      string                        `yaml:"nats_url"`
-	DataDir      string                        `yaml:"data_dir"`
-	OperatorName string                        `yaml:"operator_name"`
-	Accounts     map[string]AccountPermissions `yaml:"accounts"`
+	Listen       string                             `yaml:"listen"`
+	NATSURL      string                             `yaml:"nats_url"`
+	DataDir      string                             `yaml:"data_dir"`
+	OperatorName string                             `yaml:"operator_name"`
+	Accounts     map[string]auth.AccountPermissions `yaml:"accounts"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -56,7 +34,7 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	if cfg.Accounts == nil {
-		cfg.Accounts = map[string]AccountPermissions{
+		cfg.Accounts = map[string]auth.AccountPermissions{
 			"default": {
 				Publish:   []string{"*"},
 				Subscribe: []string{"*"},

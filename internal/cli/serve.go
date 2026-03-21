@@ -64,34 +64,9 @@ func serveCmd(version string) *cobra.Command {
 				return fmt.Errorf("failed to create store: %w", err)
 			}
 
-			// Convert config accounts to auth permissions
-			accountPerms := make(map[string]auth.AccountPermissions)
-			for name, ap := range cfg.Accounts {
-				perms := auth.AccountPermissions{
-					Publish:   ap.Publish,
-					Subscribe: ap.Subscribe,
-				}
-				for _, exp := range ap.Exports {
-					perms.Exports = append(perms.Exports, auth.ExportPermission{
-						Name:    exp.Name,
-						Subject: exp.Subject,
-						Type:    exp.Type,
-					})
-				}
-				for _, imp := range ap.Imports {
-					perms.Imports = append(perms.Imports, auth.ImportPermission{
-						Name:    imp.Name,
-						Subject: imp.Subject,
-						Account: imp.Account,
-						Type:    imp.Type,
-					})
-				}
-				accountPerms[name] = perms
-			}
-
 			// Bootstrap NATS credentials
 			keysDir := filepath.Join(cfg.DataDir, "keys")
-			credentials := auth.NewService(s, keysDir, cfg.OperatorName, accountPerms)
+			credentials := auth.NewService(s, keysDir, cfg.OperatorName, cfg.Accounts)
 			if err := credentials.Bootstrap(); err != nil {
 				return fmt.Errorf("failed to bootstrap credentials: %w", err)
 			}

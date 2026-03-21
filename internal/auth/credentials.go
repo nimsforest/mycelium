@@ -47,25 +47,25 @@ type NATSConfig struct {
 
 // ExportPermission defines a NATS account export.
 type ExportPermission struct {
-	Name    string
-	Subject string
-	Type    string // "stream" or "service"
+	Name    string `json:"name" yaml:"name"`
+	Subject string `json:"subject" yaml:"subject"`
+	Type    string `json:"type" yaml:"type"` // "stream" or "service"
 }
 
 // ImportPermission defines a NATS account import from another account.
 type ImportPermission struct {
-	Name    string
-	Subject string
-	Account string // account name (resolved to public key at JWT build time)
-	Type    string // "stream" or "service"
+	Name    string `json:"name" yaml:"name"`
+	Subject string `json:"subject" yaml:"subject"`
+	Account string `json:"account" yaml:"account"` // account name (resolved to public key at JWT build time)
+	Type    string `json:"type" yaml:"type"`        // "stream" or "service"
 }
 
 // AccountPermissions defines subject permissions for an account (from config).
 type AccountPermissions struct {
-	Publish   []string
-	Subscribe []string
-	Exports   []ExportPermission
-	Imports   []ImportPermission
+	Publish   []string           `json:"publish" yaml:"publish"`
+	Subscribe []string           `json:"subscribe" yaml:"subscribe"`
+	Exports   []ExportPermission `json:"exports" yaml:"exports"`
+	Imports   []ImportPermission `json:"imports" yaml:"imports"`
 }
 
 // Service manages NATS operator, account, and user credentials.

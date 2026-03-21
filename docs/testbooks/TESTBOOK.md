@@ -2,220 +2,333 @@
 
 Manual test procedures for verifying mycelium NATS auth service.
 
-## Prerequisites
+## Environment
 
-- mycelium binary built: `cd /home/claude-user/mycelium && go build -o mycelium ./cmd/mycelium`
-- NATS server running on `127.0.0.1:4222` with JetStream enabled
-- `nats` CLI installed
-- `curl` and `jq` installed
+**Where are you running these tests?**
 
-## Test 1: Bootstrap and startup
+| Environment | Hub | Spoke | How to run commands |
+|-------------|-----|-------|---------------------|
+| **Production** | land-shared-one (178.104.70.180) | land-nimsforest-one (46.225.164.179) | `ssh root@<ip> "<command>"` |
 
-**Goal**: Verify mycelium starts, connects to NATS, and bootstraps operator + account keys.
-
-1. Create a minimal config:
-   ```bash
-   cat > /tmp/mycelium-test.yaml <<'EOF'
-   listen: ":8090"
-   nats_url: "nats://127.0.0.1:4222"
-   data_dir: "/tmp/mycelium-data"
-   operator_name: "nimsforest"
-   accounts:
-     default:
-       publish: ["*"]
-       subscribe: ["*"]
-     nimsforest:
-       publish:
-         - "tap.landregistry.>"
-         - "forest.land.>"
-       subscribe:
-         - "land.status.>"
-         - "cloud.>"
-   EOF
-   ```
-
-2. Start mycelium:
-   ```bash
-   ./mycelium serve --config /tmp/mycelium-test.yaml
-   ```
-
-3. **Verify**: Logs show:
-   - [ ] `connected to NATS at nats://127.0.0.1:4222`
-   - [ ] `[auth] operator bootstrapped: O...` (first run) or `operator keys already exist` (subsequent)
-   - [ ] `[auth] account bootstrapped: default` (first run)
-   - [ ] `[auth] account bootstrapped: nimsforest` (first run)
-   - [ ] `mycelium serving on :8090`
-
-4. **Verify idempotency**: Restart mycelium. Logs should show "already exist, skipping" for all keys.
-
-## Test 2: Health endpoint
+Set these variables for the rest of the testbook:
 
 ```bash
-curl -s http://127.0.0.1:8090/health | jq .
+HUB=178.104.70.180      # land-shared-one
+SPOKE=46.225.164.179     # land-nimsforest-one
 ```
 
-- [ ] Returns `{"status": "ok", "version": "...", "service": "mycelium"}`
+### Available tools on production servers
 
-## Test 3: NATS config API
+- `curl` — HTTP requests
+- `nats` — NATS CLI (requires credentials for authenticated NATS)
+- `grep`, `awk`, `sed`, `cut` — text processing
+- `docker` — container management
+
+## Test 1: Mycelium health
+
+**Goal**: Verify mycelium is running on the hub.
 
 ```bash
-curl -s http://127.0.0.1:8090/api/nats-config | jq .
+ssh root@$HUB "curl -s localhost:8090/health"
 ```
 
-- [ ] Response contains `operator_jwt` (non-empty string starting with `ey`)
-- [ ] Response contains `accounts` object with keys `default` and `nimsforest`
-- [ ] Each account value is a JWT string
+- [ ] Returns JSON with `"status":"ok"` and `"service":"mycelium"`
 
-Decode and inspect:
 ```bash
-curl -s http://127.0.0.1:8090/api/nats-config | jq -r '.operator_jwt' | nats jwt decode -
-curl -s http://127.0.0.1:8090/api/nats-config | jq -r '.accounts.nimsforest' | nats jwt decode -
+ssh root@$HUB "docker ps --format '{{.Names}} {{.Status}}' | grep mycelium"
 ```
 
-- [ ] Operator JWT shows `name: nimsforest`, type: operator
-- [ ] nimsforest account JWT shows default permissions matching config (publish: `tap.landregistry.>`, `forest.land.>`, subscribe: `land.status.>`, `cloud.>`)
+- [ ] Shows `mycelium Up ...`
+
+## Test 2: NATS config API
+
+**Goal**: Verify mycelium serves operator + account JWTs.
+
+```bash
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -o '\"operator_jwt\":\"ey' | head -1"
+```
+
+- [ ] Output contains `"operator_jwt":"ey` (JWT present, starts with `ey`)
+
+```bash
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oE '\"(default|nimsforest|organisationland|system)\":\"ey' | sort"
+```
+
+- [ ] Shows all four accounts: `default`, `nimsforest`, `organisationland`, `system`
+
+## Test 3: Account JWT contents
+
+**Goal**: Verify account JWTs contain correct permissions and exports/imports.
+
+Decode the organisationland account to check exports/imports:
+
+```bash
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"organisationland\":\"\\K[^\"]+' | nats jwt decode -"
+```
+
+- [ ] Shows exports for `tap.landregistry.>`
+- [ ] Shows imports for `land.status.>` from the default account's public key
+
+Decode the default account:
+
+```bash
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"default\":\"\\K[^\"]+' | nats jwt decode -"
+```
+
+- [ ] Shows exports for `land.status.>`
+- [ ] Shows imports for `tap.landregistry.>` from the organisationland account's public key
 
 ## Test 4: Issue credential via API
 
+**Goal**: Verify credentials can be issued.
+
 ```bash
-curl -s -X POST http://127.0.0.1:8090/api/credentials/nimsforest \
+ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
   -H 'Content-Type: application/json' \
-  -d '{"name": "test-leaf"}' | jq .
+  -d '{\"name\": \"testbook-default\"}'"
 ```
 
-- [ ] Response contains `credentials` field with `.creds` file content
-- [ ] Content includes `-----BEGIN NATS USER JWT-----` and `-----BEGIN USER NKEY SEED-----`
+- [ ] Response contains `BEGIN NATS USER JWT`
+- [ ] Response contains `BEGIN USER NKEY SEED`
+
+Save a default credential for later tests:
+
+```bash
+ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\": \"testbook-hub\"}' | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/default.creds"
+```
 
 ## Test 5: Issue credential via dashboard
 
-1. Open `http://127.0.0.1:8090/dashboard/` in a browser
+**Goal**: Verify the web dashboard works.
+
+1. Open `http://178.104.70.180:8090/dashboard/` in a browser (or via SSH tunnel: `ssh -L 8090:localhost:8090 root@178.104.70.180`)
+
 2. **Verify index page**:
    - [ ] Shows operator status: `active`
-   - [ ] Shows account count: `2`
-   - [ ] Shows credential count (matches number of issued credentials)
+   - [ ] Shows account count: `4`
+   - [ ] Shows credential count
 
 3. Navigate to Accounts page:
-   - [ ] Lists `default` and `nimsforest` accounts
+   - [ ] Lists `default`, `nimsforest`, `organisationland`, `system`
    - [ ] Shows correct publish/subscribe permissions for each
 
 4. Navigate to Credentials page:
    - [ ] Shows issue form with name input and account dropdown
-   - [ ] Enter name `dashboard-test`, select `nimsforest`, click Issue
+   - [ ] Enter name `dashboard-test`, select `organisationland`, click Issue
    - [ ] Credential content displayed with Download and Copy buttons
    - [ ] Credential appears in the table below
 
 ## Test 6: Revoke credential
 
-1. From the credentials table, click "revoke" on a credential
-2. Confirm the dialog
-3. **Verify**:
-   - [ ] Credential disappears from the table
-   - [ ] `curl -s http://127.0.0.1:8090/api/nats-config | jq -r '.accounts.nimsforest' | nats jwt decode -` shows the revoked public key in revocations
+**Goal**: Verify credential revocation works.
 
-Or via API:
-```bash
-curl -s -X DELETE http://127.0.0.1:8090/api/credentials/<PUBLIC_KEY> | jq .
-```
-- [ ] Returns `{"status": "revoked"}`
-
-## Test 7: Hub NATS auth integration
-
-**Goal**: Verify the hub forest picks up auth from mycelium.
-
-1. On land-shared-one, ensure mycelium is running on port 8090
-2. Set `MYCELIUM_URL=http://127.0.0.1:8090` in forest container environment
-3. Restart the hub forest
-
-4. **Verify**:
-   ```bash
-   nats server info
-   ```
-   - [ ] Shows accounts (not just `$G`)
-   - [ ] Auth is enabled
-
-5. Wait 60 seconds for refresh cycle, then check again:
-   - [ ] Account JWTs are being refreshed (check mycelium logs for fetch requests)
-
-## Test 8: Spoke leaf node with credentials
-
-**Goal**: Verify spoke connects to hub using .creds file.
-
-1. Issue a credential for the nimsforest account:
-   ```bash
-   curl -s -X POST http://127.0.0.1:8090/api/credentials/nimsforest \
-     -H 'Content-Type: application/json' \
-     -d '{"name": "nimsforest-leaf"}' | jq -r '.credentials' > /tmp/nimsforest.creds
-   ```
-
-2. SCP to spoke:
-   ```bash
-   scp /tmp/nimsforest.creds root@<spoke-ip>:/etc/nimsforest/nimsforest.creds
-   ```
-
-3. Update spoke forest config (`/opt/nimsforest/config/forest.yaml`):
-   ```yaml
-   organization:
-     slug: nimsforest
-     mycelium_url: nats://178.104.70.180:7422
-     mycelium_credentials: /etc/nimsforest/nimsforest.creds
-   ```
-
-4. Restart spoke forest
-
-5. **Verify**:
-   - [ ] Spoke logs show `Leaf node remote configured: nats://178.104.70.180:7422 (credentials=/etc/nimsforest/nimsforest.creds)`
-   - [ ] Leaf node connects successfully (no auth errors in hub logs)
-
-## Test 9: Subject ACL enforcement
-
-**Goal**: Verify the nimsforest account can only publish/subscribe to permitted subjects.
-
-From the spoke (using credentials):
+First, issue a throwaway credential:
 
 ```bash
-# Should succeed — in nimsforest publish list
-nats pub tap.landregistry.lands.create '{"test": true}' --creds /etc/nimsforest/nimsforest.creds
-nats pub forest.land.status '{"status": "ok"}' --creds /etc/nimsforest/nimsforest.creds
-
-# Should succeed — in nimsforest subscribe list
-nats sub land.status.test --creds /etc/nimsforest/nimsforest.creds &
-nats sub cloud.provisioned --creds /etc/nimsforest/nimsforest.creds &
-
-# Should be DENIED — not in nimsforest publish list
-nats pub cloud.provisioned '{"test": true}' --creds /etc/nimsforest/nimsforest.creds
-nats pub song.telegram.send '{"test": true}' --creds /etc/nimsforest/nimsforest.creds
+ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\": \"revoke-test\"}'"
 ```
 
-- [ ] Permitted publishes succeed
-- [ ] Permitted subscribes succeed
-- [ ] Denied publishes return permissions violation error
+Extract the public key from the response (look for the `U` key in the credentials field), then revoke it:
 
-## Test 10: Full lifecycle — landregistry tap event
+```bash
+ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
+```
 
-**Goal**: End-to-end test that a land creation request from spoke reaches landregistry on hub.
+- [ ] Returns `{"status":"revoked"}`
 
-1. On hub, subscribe to landregistry tap:
-   ```bash
-   nats sub "tap.landregistry.>" --count 1
-   ```
+Or use the dashboard: click "revoke" next to the credential in the Credentials page.
 
-2. From spoke, publish:
-   ```bash
-   nats pub tap.landregistry.lands.create '{"name":"test-land","organization":"nimsforest"}' \
-     --creds /etc/nimsforest/nimsforest.creds
-   ```
+## Test 7: Leaf node connectivity
 
-3. **Verify**:
-   - [ ] Hub receives the message on `tap.landregistry.lands.create`
-   - [ ] Message payload matches what was sent
+**Goal**: Verify the spoke (land-nimsforest-one) is connected to the hub via leaf node.
 
-## Test 11: Credential revocation propagation
+```bash
+ssh root@$HUB "curl -s http://127.0.0.1:8222/leafz"
+```
+
+- [ ] Shows a leaf from `46.225.164.179` (land-nimsforest-one)
+- [ ] Leaf is associated with an account (the organisationland account's public key)
+
+## Test 8: Hub auth is active
+
+**Goal**: Verify the hub forest is using TrustedOperators auth from mycelium.
+
+```bash
+ssh root@$HUB "curl -s http://127.0.0.1:8222/varz | grep auth_required"
+```
+
+- [ ] Shows `"auth_required": true`
+
+## Test 9: Cross-account export/import — spoke to hub
+
+**Goal**: Verify `tap.landregistry.>` flows from organisationland (spoke) to default (hub) via export/import.
+
+Terminal A — subscribe on the hub (using default account credentials):
+
+```bash
+ssh root@$HUB "nats sub 'tap.landregistry.>' --count 1 --creds /tmp/default.creds"
+```
+
+Terminal B — publish from the spoke:
+
+```bash
+ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}'"
+```
+
+- [ ] Terminal A receives the message on `tap.landregistry.lands.create`
+- [ ] Payload matches what was sent
+
+## Test 10: Cross-account export/import — hub to spoke
+
+**Goal**: Verify `land.status.>` flows from default (hub) to organisationland (spoke) via export/import.
+
+Terminal A — subscribe on the spoke:
+
+```bash
+ssh root@$SPOKE "nats sub 'land.status.>' --count 1"
+```
+
+Terminal B — publish from the hub (using default account credentials):
+
+```bash
+ssh root@$HUB "nats pub land.status.test '{\"status\": \"ok\"}' --creds /tmp/default.creds"
+```
+
+- [ ] Terminal A on spoke receives the message
+- [ ] Payload matches
+
+## Test 11: Non-exported subjects do NOT cross accounts
+
+**Goal**: Verify subject isolation between accounts.
+
+Terminal A — subscribe on the spoke for a subject NOT in imports:
+
+```bash
+ssh root@$SPOKE "timeout 5 nats sub 'song.telegram.>' --count 1; echo 'TIMED OUT (expected)'"
+```
+
+Terminal B — publish from the hub on default account:
+
+```bash
+ssh root@$HUB "nats pub song.telegram.send '{\"test\": true}' --creds /tmp/default.creds"
+```
+
+- [ ] Spoke subscriber times out — message does NOT cross accounts
+
+## Test 12: Subject ACL enforcement on spoke
+
+**Goal**: Verify the organisationland account can only publish/subscribe to permitted subjects.
+
+From the spoke:
+
+```bash
+# Should succeed — in organisationland publish list
+ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}' 2>&1"
+
+# Should be DENIED — not in organisationland publish list
+ssh root@$SPOKE "nats pub forest.land.status '{\"test\": true}' 2>&1"
+ssh root@$SPOKE "nats pub song.telegram.send '{\"test\": true}' 2>&1"
+```
+
+- [ ] `tap.landregistry.lands.create` publish succeeds
+- [ ] `forest.land.status` publish is denied (permissions violation)
+- [ ] `song.telegram.send` publish is denied (permissions violation)
+
+## Test 13: Per-credential permission overrides
+
+**Goal**: Verify that per-credential publish/subscribe overrides narrow the effective permissions.
+
+Issue a credential with narrower permissions than the account default:
+
+```bash
+ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\": \"narrow-test\", \"publish\": [\"land.status.>\"], \"subscribe\": [\"land.status.>\"]}' \
+  | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/narrow.creds"
+```
+
+Test with the narrowed credential:
+
+```bash
+# Should succeed — in the credential's publish list
+ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/narrow.creds 2>&1"
+
+# Should be DENIED — not in the credential's publish list (even though account allows it)
+ssh root@$HUB "nats pub tap.landregistry.lands.create '{\"test\": true}' --creds /tmp/narrow.creds 2>&1"
+```
+
+- [ ] `land.status.test` publish succeeds
+- [ ] `tap.landregistry.lands.create` publish is denied
+
+Decode the credential JWT to confirm:
+
+```bash
+ssh root@$HUB "cat /tmp/narrow.creds | nats jwt decode -"
+```
+
+- [ ] Pub allow list contains only `_INBOX.>` and `land.status.>`
+- [ ] Sub allow list contains only `_INBOX.>` and `land.status.>`
+
+## Test 14: Credential revocation propagation
 
 **Goal**: Verify that revoking a credential prevents further access.
 
-1. Issue a credential and verify it works (can publish)
-2. Revoke it via API or dashboard
-3. Wait 60 seconds for hub auth refresh
-4. Try to publish using the revoked credential
+1. Issue a credential for default account:
+   ```bash
+   ssh root@$HUB "curl -s -X POST localhost:8090/api/credentials/default \
+     -H 'Content-Type: application/json' \
+     -d '{\"name\": \"revoke-prop-test\"}' \
+     | grep -oP '\"credentials\":\"\\K[^\"]*' | sed 's/\\\\n/\n/g' > /tmp/revoke-test.creds"
+   ```
 
-- [ ] Publish fails with authorization error after refresh
+2. Verify it works:
+   ```bash
+   ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/revoke-test.creds"
+   ```
+   - [ ] Publish succeeds
+
+3. Extract public key and revoke:
+   ```bash
+   ssh root@$HUB "cat /tmp/revoke-test.creds | nats jwt decode - 2>&1 | grep 'Subject:'"
+   ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
+   ```
+   - [ ] Returns `{"status":"revoked"}`
+
+4. Wait 60 seconds for hub auth refresh, then retry:
+   ```bash
+   ssh root@$HUB "nats pub land.status.test '{\"ok\": true}' --creds /tmp/revoke-test.creds"
+   ```
+   - [ ] Publish fails with authorization error
+
+## Test 15: Full lifecycle — landregistry tap event
+
+**Goal**: End-to-end test that a land creation request from spoke reaches landregistry on hub.
+
+Terminal A — on hub, watch landregistry logs:
+
+```bash
+ssh root@$HUB "docker logs -f landregistry 2>&1 | grep -i 'tap.landregistry'"
+```
+
+Terminal B — from spoke, publish:
+
+```bash
+ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"name\":\"testbook-land\",\"organization\":\"nimsforest\"}'"
+```
+
+- [ ] Hub landregistry logs show the received message
+- [ ] Payload matches what was sent
+
+## Cleanup
+
+Remove test credentials created during this testbook:
+
+```bash
+ssh root@$HUB "rm -f /tmp/default.creds /tmp/narrow.creds /tmp/revoke-test.creds"
+```
+
+Revoke test credentials via dashboard at `http://178.104.70.180:8090/dashboard/` — remove any credentials named `testbook-*`, `dashboard-test`, `narrow-test`, `revoke-prop-test`.
