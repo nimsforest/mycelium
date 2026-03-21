@@ -129,7 +129,10 @@ func serveCmd(version string) *cobra.Command {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 					return
 				}
-					writeJSON(w, http.StatusCreated, map[string]string{"credentials": credsContent})
+				// NOTE: Do NOT publish mycelium.auth.updated here. Credential issuance does not
+				// change account JWTs, and the forest's fetchAndApplyAuth() calls fetchInternalCredentials()
+				// which issues a credential — publishing here creates an infinite notification loop.
+				writeJSON(w, http.StatusCreated, map[string]string{"credentials": credsContent})
 			})
 
 			// Revoke credential

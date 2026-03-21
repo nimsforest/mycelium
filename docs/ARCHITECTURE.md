@@ -88,6 +88,12 @@ Propagation time: ~1-2 seconds.
 
 The forest also runs a 5-minute fallback ticker as a safety net in case a NATS event is missed. If the NATS subscription cannot be established at all (e.g., during bootstrap), it falls back to 60-second polling.
 
+### Important implementation details
+
+**Only publish on revocations, not issuance.** The `mycelium.auth.updated` event must NOT be published after credential issuance. The forest's refresh handler calls `fetchInternalCredentials()` which issues a credential via `POST /api/credentials/default` — publishing on issuance creates an infinite notification loop.
+
+**`MemAccResolver.Store()` is not enough.** On the forest side, storing updated JWTs in the resolver does not trigger the NATS server to re-evaluate account claims. The forest must also call `server.LookupAccount()` + `server.UpdateAccountClaims()` to force the server to process revocation lists in-place.
+
 ## Storage
 
 All data lives in the `MYCELIUM_SOIL` KV bucket on NATS JetStream:
