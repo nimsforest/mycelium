@@ -4,7 +4,7 @@
 
 Mycelium is the NATS TrustedOperators auth service for NimsForest. It manages operator and account NKeys, issues user credentials (.creds files), and serves NATS auth config (JWTs) for hub and spoke forest servers.
 
-- **Server**: land-shared-one (178.104.70.180)
+- **Server**: land-shared-one (land-shared-one.nimsforest.com)
 - **Deployment**: Docker container `mycelium`, host networking
 - **HTTP API**: port 8090
 - **Dashboard**: port 8090 at `/dashboard/`
@@ -19,16 +19,16 @@ Cross-compile, upload, rebuild container, restart:
 ```bash
 cd /home/claude-user/mycelium
 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=v0.X.X" -o /tmp/mycelium-linux-amd64 ./cmd/mycelium/
-scp /tmp/mycelium-linux-amd64 root@178.104.70.180:/opt/mycelium/mycelium
-ssh root@178.104.70.180 "cd /opt/mycelium && docker build -t mycelium . && docker rm -f mycelium && docker run -d --name mycelium --network host -v /opt/mycelium/config.yaml:/etc/mycelium/config.yaml:ro -v /var/lib/mycelium:/var/lib/mycelium mycelium"
+scp /tmp/mycelium-linux-amd64 root@land-shared-one.nimsforest.com:/opt/mycelium/mycelium
+ssh root@land-shared-one.nimsforest.com "cd /opt/mycelium && docker build -t mycelium . && docker rm -f mycelium && docker run -d --name mycelium --network host -v /opt/mycelium/config.yaml:/etc/mycelium/config.yaml:ro -v /var/lib/mycelium:/var/lib/mycelium mycelium"
 rm /tmp/mycelium-linux-amd64
 ```
 
 Verify:
 
 ```bash
-ssh root@178.104.70.180 "docker logs --tail 20 mycelium"
-ssh root@178.104.70.180 "curl -s localhost:8090/health"
+ssh root@land-shared-one.nimsforest.com "docker logs --tail 20 mycelium"
+ssh root@land-shared-one.nimsforest.com "curl -s localhost:8090/health"
 ```
 
 ## CLI Commands
@@ -125,8 +125,8 @@ Note: bare `nats` CLI on land-shared-one requires auth. Use credentials or acces
 ### Container not starting
 
 ```bash
-ssh root@178.104.70.180 "docker ps -a | grep mycelium"
-ssh root@178.104.70.180 "docker logs mycelium"
+ssh root@land-shared-one.nimsforest.com "docker ps -a | grep mycelium"
+ssh root@land-shared-one.nimsforest.com "docker logs mycelium"
 ```
 
 ### NATS connection failed
@@ -134,8 +134,8 @@ ssh root@178.104.70.180 "docker logs mycelium"
 NATS is embedded in the forest container on land-shared-one:
 
 ```bash
-ssh root@178.104.70.180 "docker ps | grep nimsforest"
-ssh root@178.104.70.180 "ss -tlnp | grep 4222"
+ssh root@land-shared-one.nimsforest.com "docker ps | grep nimsforest"
+ssh root@land-shared-one.nimsforest.com "ss -tlnp | grep 4222"
 ```
 
 ### Dashboard not loading
@@ -143,8 +143,8 @@ ssh root@178.104.70.180 "ss -tlnp | grep 4222"
 Check mycelium is running and port is open:
 
 ```bash
-ssh root@178.104.70.180 "curl -s localhost:8090/health"
-ssh root@178.104.70.180 "ss -tlnp | grep 8090"
+ssh root@land-shared-one.nimsforest.com "curl -s localhost:8090/health"
+ssh root@land-shared-one.nimsforest.com "ss -tlnp | grep 8090"
 ```
 
 ### Keys lost after container recreate

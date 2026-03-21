@@ -8,11 +8,11 @@ End-to-end test for provisioning a new organization land server from the hub, ve
 
 | Environment | Hub | How to run commands |
 |-------------|-----|---------------------|
-| **Production** | land-shared-one (178.104.70.180) | `ssh root@<ip> "<command>"` |
+| **Production** | land-shared-one (land-shared-one.nimsforest.com) | `ssh root@<ip> "<command>"` |
 
 ## Prerequisites
 
-- Land-shared-one (178.104.70.180) running:
+- Land-shared-one (land-shared-one.nimsforest.com) running:
   - nimsforest (forest + embedded NATS)
   - mycelium (port 8090)
   - landregistry (port 8096)
@@ -23,7 +23,7 @@ End-to-end test for provisioning a new organization land server from the hub, ve
 ## Test Variables
 
 ```bash
-export HUB=178.104.70.180
+export HUB=land-shared-one.nimsforest.com
 export ADMIN_TOKEN="425a3e5b896bee36f648965ed12e6df0405baebf926e4b4341a79704bc8771fd"
 export TEST_ORG="e2etest"
 export TEST_ORG_NAME="E2E Test Org"

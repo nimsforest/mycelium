@@ -8,13 +8,13 @@ Manual test procedures for verifying mycelium NATS auth service.
 
 | Environment | Hub | Spoke | How to run commands |
 |-------------|-----|-------|---------------------|
-| **Production** | land-shared-one (178.104.70.180) | land-nimsforest-one (46.225.164.179) | See below |
+| **Production** | land-shared-one (land-shared-one.nimsforest.com) | land-nimsforest-one (land-nimsforest-one.nimsforest.com) | See below |
 
 Set these variables for the rest of the testbook:
 
 ```bash
-HUB=178.104.70.180      # land-shared-one
-SPOKE=46.225.164.179     # land-nimsforest-one
+HUB=land-shared-one.nimsforest.com      # land-shared-one
+SPOKE=land-nimsforest-one.nimsforest.com     # land-nimsforest-one
 NATS_HUB=nats://$HUB:4222
 ```
 
@@ -169,7 +169,7 @@ ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
 nats server report leafnodes --server $NATS_HUB --creds /tmp/testbook-system.creds
 ```
 
-- [ ] Shows a leaf from `46.225.164.179` (land-nimsforest-one)
+- [ ] Shows a leaf from `land-nimsforest-one.nimsforest.com` (land-nimsforest-one)
 - [ ] Leaf is associated with the organisationland account's public key
 
 ## Test 8: Hub auth is active
