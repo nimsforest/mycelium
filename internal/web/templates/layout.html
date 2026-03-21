@@ -13,11 +13,9 @@
         h1, h2, h3, h4, h5, h6, nav, .nav-link, button, input, select, label, .font-ui,
         th, .stat-value, .stat-label { font-family: 'Inter', sans-serif; }
 
-        /* Utilities missing from pre-compiled nwc Tailwind */
         .bg-canopy { background-color: #1E3A1C; }
         .text-canopy { color: #1E3A1C; }
         .text-sprout { color: #A8D5A2; }
-        .text-solar-gold-dark { color: #c9a029; }
         .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
         .text-white\/80 { color: rgba(255,255,255,0.8); }
         .text-soil\/40 { color: rgba(107,91,78,0.4); }
@@ -48,15 +46,13 @@
     <header class="bg-canopy text-white">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
             <div class="flex items-center gap-4">
-                <a href="/" class="text-sm text-white/80 hover:text-sprout transition-colors">NimsForest</a>
+                <a href="/dashboard/" class="text-sm text-white/80 hover:text-sprout transition-colors">NimsForest</a>
                 <span class="text-white/80">/</span>
-                <a href="/" class="text-xl font-bold tracking-tight hover:text-sprout transition-colors">Mycelium</a>
+                <a href="/dashboard/" class="text-xl font-bold tracking-tight hover:text-sprout transition-colors">Mycelium</a>
             </div>
             <nav class="flex items-center gap-6 text-sm font-medium">
-                <a href="/organizations" class="nav-link {{if eq .Nav "organizations"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Organizations</a>
-                <a href="/users" class="nav-link {{if eq .Nav "users"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Users</a>
-                <a href="/passports" class="nav-link {{if eq .Nav "passports"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Passports</a>
-                <a href="/credentials" class="nav-link {{if eq .Nav "credentials"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Credentials</a>
+                <a href="/dashboard/accounts" class="nav-link {{if eq .Nav "accounts"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Accounts</a>
+                <a href="/dashboard/credentials" class="nav-link {{if eq .Nav "credentials"}}text-sprout{{else}}text-white/80 hover:text-sprout{{end}} transition-colors">Credentials</a>
             </nav>
         </div>
     </header>
@@ -67,7 +63,7 @@
 
     <footer class="border-t border-sprout/30 py-4">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-soil/60">
-            Mycelium — from root to canopy
+            Mycelium — NATS auth service
             <span class="ml-2 text-xs text-soil/40">{{.Version}}</span>
         </div>
     </footer>

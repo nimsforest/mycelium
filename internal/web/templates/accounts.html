@@ -1,0 +1,36 @@
+{{define "content"}}
+<div class="mb-8">
+    <h1 class="text-2xl font-bold text-canopy">Accounts</h1>
+    <p class="text-soil/70 mt-1">Configured NATS accounts and their subject permissions (read-only, from config).</p>
+</div>
+
+{{if .Data.Accounts}}
+<div class="space-y-4">
+    {{range .Data.Accounts}}
+    <div class="bg-forest-card rounded-xl border border-sprout/30 p-6">
+        <h2 class="text-lg font-semibold text-canopy mb-4">{{.Name}}</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+                <h3 class="text-xs text-soil/60 uppercase tracking-wider font-medium mb-2 font-ui">Publish</h3>
+                <div class="flex flex-wrap gap-1">
+                    {{range .Publish}}
+                    <span class="inline-block bg-forest-green/10 text-forest-green px-2 py-0.5 rounded text-xs font-mono">{{.}}</span>
+                    {{end}}
+                </div>
+            </div>
+            <div>
+                <h3 class="text-xs text-soil/60 uppercase tracking-wider font-medium mb-2 font-ui">Subscribe</h3>
+                <div class="flex flex-wrap gap-1">
+                    {{range .Subscribe}}
+                    <span class="inline-block bg-solar-gold/10 text-solar-gold px-2 py-0.5 rounded text-xs font-mono">{{.}}</span>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<p class="text-soil/60 italic">No accounts configured.</p>
+{{end}}
+{{end}}

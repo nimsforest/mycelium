@@ -45,10 +45,27 @@ type NATSConfig struct {
 	Accounts    map[string]string `json:"accounts"` // account name -> signed account JWT
 }
 
+// ExportPermission defines a NATS account export.
+type ExportPermission struct {
+	Name    string
+	Subject string
+	Type    string // "stream" or "service"
+}
+
+// ImportPermission defines a NATS account import from another account.
+type ImportPermission struct {
+	Name    string
+	Subject string
+	Account string // account name (resolved to public key at JWT build time)
+	Type    string // "stream" or "service"
+}
+
 // AccountPermissions defines subject permissions for an account (from config).
 type AccountPermissions struct {
 	Publish   []string
 	Subscribe []string
+	Exports   []ExportPermission
+	Imports   []ImportPermission
 }
 
 // Service manages NATS operator, account, and user credentials.
@@ -88,6 +105,7 @@ func (svc *Service) Bootstrap() error {
 }
 
 // ensureOperatorKeys checks KV → disk → create, in that order.
+// Always syncs KV → disk so keys survive JetStream namespace changes.
 func (svc *Service) ensureOperatorKeys() error {
 	kvKey := "operator.keys"
 	diskPath := svc.diskKeyPath("operator.json")
@@ -95,6 +113,14 @@ func (svc *Service) ensureOperatorKeys() error {
 	// 1. Check KV
 	_, err := svc.store.Get(kvKey)
 	if err == nil {
+		// KV has keys — ensure they're also on disk
+		if _, diskErr := svc.readKeyFromDisk(diskPath); diskErr != nil {
+			var kp KeyPair
+			if err := svc.store.GetJSON(kvKey, &kp); err == nil {
+				svc.writeKeyToDisk(diskPath, &kp)
+				log.Printf("[auth] operator keys synced to disk: %s", kp.PublicKey)
+			}
+		}
 		log.Printf("[auth] operator keys already exist, skipping")
 		return nil
 	}
@@ -129,6 +155,7 @@ func (svc *Service) ensureOperatorKeys() error {
 }
 
 // ensureAccountKeys checks KV → disk → create, in that order.
+// Always syncs KV → disk so keys survive JetStream namespace changes.
 func (svc *Service) ensureAccountKeys(name string) error {
 	kvKey := "accounts." + name + ".keys"
 	diskPath := svc.diskKeyPath("account-" + name + ".json")
@@ -136,6 +163,14 @@ func (svc *Service) ensureAccountKeys(name string) error {
 	// 1. Check KV
 	_, err := svc.store.Get(kvKey)
 	if err == nil {
+		// KV has keys — ensure they're also on disk
+		if _, diskErr := svc.readKeyFromDisk(diskPath); diskErr != nil {
+			var kp KeyPair
+			if err := svc.store.GetJSON(kvKey, &kp); err == nil {
+				svc.writeKeyToDisk(diskPath, &kp)
+				log.Printf("[auth] account %s keys synced to disk: %s", name, kp.PublicKey)
+			}
+		}
 		log.Printf("[auth] account %s keys already exist, skipping", name)
 		return nil
 	}
@@ -208,7 +243,9 @@ func (svc *Service) writeKeyToDisk(path string, kp *KeyPair) {
 
 // IssueCredential generates a user NKey pair, signs a JWT with the account key,
 // and returns the .creds file content.
-func (svc *Service) IssueCredential(name, account string) (string, error) {
+// If publish or subscribe are non-nil, they override the account defaults for this credential.
+// Pass nil for both to use account-level defaults (backwards compatible).
+func (svc *Service) IssueCredential(name, account string, publish, subscribe []string) (string, error) {
 	if account == "" {
 		account = "default"
 	}
@@ -237,12 +274,20 @@ func (svc *Service) IssueCredential(name, account string) (string, error) {
 	userPub, _ := userKP.PublicKey()
 	userSeed, _ := userKP.Seed()
 
-	// Build permissions from config
+	// Build permissions: use per-credential overrides if provided, else account defaults
 	var pubAllow, subAllow []string
 	pubAllow = append(pubAllow, "_INBOX.>")
 	subAllow = append(subAllow, "_INBOX.>")
-	pubAllow = append(pubAllow, perms.Publish...)
-	subAllow = append(subAllow, perms.Subscribe...)
+	if publish != nil {
+		pubAllow = append(pubAllow, publish...)
+	} else {
+		pubAllow = append(pubAllow, perms.Publish...)
+	}
+	if subscribe != nil {
+		subAllow = append(subAllow, subscribe...)
+	} else {
+		subAllow = append(subAllow, perms.Subscribe...)
+	}
 
 	// Create and sign user JWT
 	claims := jwt.NewUserClaims(userPub)
@@ -354,7 +399,17 @@ func (svc *Service) GetNATSConfig() (*NATSConfig, error) {
 	opClaims := jwt.NewOperatorClaims(opKeys.PublicKey)
 	opClaims.Name = svc.operatorName
 
-	// Build account JWTs
+	// Pass 1: collect account public keys for cross-account import resolution
+	accountPublicKeys := make(map[string]string)
+	for accName := range svc.accounts {
+		var accKeys KeyPair
+		if err := svc.store.GetJSON("accounts."+accName+".keys", &accKeys); err != nil {
+			continue
+		}
+		accountPublicKeys[accName] = accKeys.PublicKey
+	}
+
+	// Pass 2: build account JWTs with exports/imports
 	accountJWTs := make(map[string]string)
 	for accName, perms := range svc.accounts {
 		var accKeys KeyPair
@@ -370,6 +425,38 @@ func (svc *Service) GetNATSConfig() (*NATSConfig, error) {
 		accClaims.DefaultPermissions.Sub.Allow.Add(perms.Subscribe...)
 		accClaims.DefaultPermissions.Pub.Allow.Add("_INBOX.>")
 		accClaims.DefaultPermissions.Sub.Allow.Add("_INBOX.>")
+
+		// Add exports
+		for _, exp := range perms.Exports {
+			exportType := jwt.Stream
+			if exp.Type == "service" {
+				exportType = jwt.Service
+			}
+			accClaims.Exports = append(accClaims.Exports, &jwt.Export{
+				Name:    exp.Name,
+				Subject: jwt.Subject(exp.Subject),
+				Type:    exportType,
+			})
+		}
+
+		// Add imports (resolve account name to public key)
+		for _, imp := range perms.Imports {
+			importType := jwt.Stream
+			if imp.Type == "service" {
+				importType = jwt.Service
+			}
+			sourcePublicKey, ok := accountPublicKeys[imp.Account]
+			if !ok {
+				log.Printf("[auth] warning: import %q references unknown account %q, skipping", imp.Name, imp.Account)
+				continue
+			}
+			accClaims.Imports = append(accClaims.Imports, &jwt.Import{
+				Name:    imp.Name,
+				Subject: jwt.Subject(imp.Subject),
+				Account: sourcePublicKey,
+				Type:    importType,
+			})
+		}
 
 		// Enable JetStream for all accounts except the system account (-1 = unlimited).
 		// Required when the NATS server runs with TrustedOperators.

@@ -7,41 +7,62 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the mycelium daemon configuration.
+// ExportConfig defines a NATS account export.
+type ExportConfig struct {
+	Name    string `yaml:"name"`
+	Subject string `yaml:"subject"`
+	Type    string `yaml:"type"` // "stream" or "service"
+}
+
+// ImportConfig defines a NATS account import from another account.
+type ImportConfig struct {
+	Name    string `yaml:"name"`
+	Subject string `yaml:"subject"`
+	Account string `yaml:"account"` // account name (resolved to public key at JWT build time)
+	Type    string `yaml:"type"`    // "stream" or "service"
+}
+
+// AccountPermissions defines the NATS subject permissions for an account.
+type AccountPermissions struct {
+	Publish   []string       `yaml:"publish"`
+	Subscribe []string       `yaml:"subscribe"`
+	Exports   []ExportConfig `yaml:"exports"`
+	Imports   []ImportConfig `yaml:"imports"`
+}
+
+// Config holds mycelium configuration.
 type Config struct {
-	Listen       string `yaml:"listen"`
-	NATSURL      string `yaml:"nats_url"`
-	ForestServer string `yaml:"forest_server"`
-	LandServer   string `yaml:"land_server"`
-	BaseNATSPort int    `yaml:"base_nats_port"`
-	BaseLandPort int    `yaml:"base_land_port"`
-	Domain       string `yaml:"domain"`
-	CertDir      string `yaml:"cert_dir"`
+	Listen       string                        `yaml:"listen"`
+	NATSURL      string                        `yaml:"nats_url"`
+	DataDir      string                        `yaml:"data_dir"`
+	OperatorName string                        `yaml:"operator_name"`
+	Accounts     map[string]AccountPermissions `yaml:"accounts"`
 }
 
 func loadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
+		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	cfg := &Config{
+		Listen:       ":8090",
+		NATSURL:      "nats://127.0.0.1:4222",
+		DataDir:      "/var/lib/mycelium",
+		OperatorName: "nimsforest",
+	}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	if cfg.Listen == "" {
-		cfg.Listen = ":8090"
-	}
-	if cfg.NATSURL == "" {
-		cfg.NATSURL = "nats://127.0.0.1:4222"
-	}
-	if cfg.BaseNATSPort == 0 {
-		cfg.BaseNATSPort = 4222
-	}
-	if cfg.BaseLandPort == 0 {
-		cfg.BaseLandPort = 8080
+	if cfg.Accounts == nil {
+		cfg.Accounts = map[string]AccountPermissions{
+			"default": {
+				Publish:   []string{"*"},
+				Subscribe: []string{"*"},
+			},
+		}
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }

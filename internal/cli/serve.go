@@ -67,10 +67,26 @@ func serveCmd(version string) *cobra.Command {
 			// Convert config accounts to auth permissions
 			accountPerms := make(map[string]auth.AccountPermissions)
 			for name, ap := range cfg.Accounts {
-				accountPerms[name] = auth.AccountPermissions{
+				perms := auth.AccountPermissions{
 					Publish:   ap.Publish,
 					Subscribe: ap.Subscribe,
 				}
+				for _, exp := range ap.Exports {
+					perms.Exports = append(perms.Exports, auth.ExportPermission{
+						Name:    exp.Name,
+						Subject: exp.Subject,
+						Type:    exp.Type,
+					})
+				}
+				for _, imp := range ap.Imports {
+					perms.Imports = append(perms.Imports, auth.ImportPermission{
+						Name:    imp.Name,
+						Subject: imp.Subject,
+						Account: imp.Account,
+						Type:    imp.Type,
+					})
+				}
+				accountPerms[name] = perms
 			}
 
 			// Bootstrap NATS credentials
@@ -82,7 +98,7 @@ func serveCmd(version string) *cobra.Command {
 
 			// Bootstrap mycelium's own credential for surviving auth restarts
 			if _, err := os.Stat(selfCredsPath); os.IsNotExist(err) {
-				credsContent, err := credentials.IssueCredential("mycelium", "default")
+				credsContent, err := credentials.IssueCredential("mycelium", "default", nil, nil)
 				if err != nil {
 					log.Printf("warning: failed to issue self credential: %v", err)
 				} else {
@@ -120,7 +136,9 @@ func serveCmd(version string) *cobra.Command {
 			mux.HandleFunc("POST /api/credentials/{account}", func(w http.ResponseWriter, r *http.Request) {
 				account := r.PathValue("account")
 				var req struct {
-					Name string `json:"name"`
+					Name      string   `json:"name"`
+					Publish   []string `json:"publish,omitempty"`
+					Subscribe []string `json:"subscribe,omitempty"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -131,7 +149,7 @@ func serveCmd(version string) *cobra.Command {
 					return
 				}
 
-				credsContent, err := credentials.IssueCredential(req.Name, account)
+				credsContent, err := credentials.IssueCredential(req.Name, account, req.Publish, req.Subscribe)
 				if err != nil {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 					return
