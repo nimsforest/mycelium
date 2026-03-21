@@ -322,8 +322,9 @@ head -2 /tmp/testbook-narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/nu
    ```
    - [ ] Returns `{"status":"revoked"}`
 
-4. Wait 60 seconds for hub auth refresh, then retry:
+4. Wait ~5 seconds for push-based auth refresh (mycelium publishes `mycelium.auth.updated` on NATS, forest subscribes and re-fetches JWTs immediately):
    ```bash
+   sleep 5
    nats pub land.status.test '{"ok": true}' --server $NATS_HUB --creds /tmp/testbook-revoke-prop.creds
    ```
    - [ ] Publish fails with authorization error

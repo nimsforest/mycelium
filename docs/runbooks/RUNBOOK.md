@@ -117,7 +117,7 @@ Note: bare `nats` CLI on land-shared-one requires auth. Use credentials or acces
 | `GET` | `/health` | Health check |
 | `GET` | `/api/nats-config` | Get operator + account JWTs for NATS resolver |
 | `POST` | `/api/credentials/{account}` | Issue a new credential |
-| `DELETE` | `/api/credentials/{publickey}` | Revoke a credential |
+| `DELETE` | `/api/credentials/{publickey}` | Revoke a credential (also publishes NATS event) |
 | `GET` | `/dashboard/` | Web dashboard |
 
 ## Troubleshooting
@@ -146,6 +146,12 @@ Check mycelium is running and port is open:
 ssh root@land-shared-one.nimsforest.com "curl -s localhost:8090/health"
 ssh root@land-shared-one.nimsforest.com "ss -tlnp | grep 8090"
 ```
+
+### Auth refresh after credential changes
+
+Mycelium publishes `mycelium.auth.updated` on NATS after every credential issue or revoke. The forest (nimsforest2) subscribes to this event and immediately re-fetches account JWTs from `/api/nats-config`, then hot-reloads the NATS resolver. Revocations propagate in ~1-2 seconds.
+
+If the NATS subscription is not established (e.g., during bootstrap), the forest falls back to polling every 60 seconds, with a 5-minute safety-net ticker when the subscription is active.
 
 ### Keys lost after container recreate
 
