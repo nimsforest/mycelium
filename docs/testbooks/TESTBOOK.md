@@ -63,20 +63,20 @@ ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oE '\"(default|nim
 Decode the organisationland account to check exports/imports:
 
 ```bash
-ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"organisationland\":\"\\K[^\"]+' | nats jwt decode -"
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"organisationland\":\"\\K[^\"]+' | cut -d. -f2 | base64 -d 2>/dev/null"
 ```
 
-- [ ] Shows exports for `tap.landregistry.>`
-- [ ] Shows imports for `land.status.>` from the default account's public key
+- [ ] Shows export with subject `tap.landregistry.>`
+- [ ] Shows import with subject `land.status.>` referencing the default account's public key
 
 Decode the default account:
 
 ```bash
-ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"default\":\"\\K[^\"]+' | nats jwt decode -"
+ssh root@$HUB "curl -s localhost:8090/api/nats-config | grep -oP '\"default\":\"\\K[^\"]+' | cut -d. -f2 | base64 -d 2>/dev/null"
 ```
 
-- [ ] Shows exports for `land.status.>`
-- [ ] Shows imports for `tap.landregistry.>` from the organisationland account's public key
+- [ ] Shows export with subject `land.status.>`
+- [ ] Shows import with subject `tap.landregistry.>` referencing the organisationland account's public key
 
 ## Test 4: Issue credential via API
 
@@ -219,24 +219,29 @@ ssh root@$HUB "nats pub song.telegram.send '{\"test\": true}' --creds /tmp/defau
 
 - [ ] Spoke subscriber times out — message does NOT cross accounts
 
-## Test 12: Subject ACL enforcement on spoke
+## Test 12: Subject ACL enforcement at leaf node boundary
 
-**Goal**: Verify the organisationland account can only publish/subscribe to permitted subjects.
+**Goal**: Verify that only permitted subjects cross from spoke to hub. The spoke's local NATS does not enforce per-user ACLs — enforcement happens at the leaf node boundary between accounts.
 
-From the spoke:
+Permitted subject — subscribe on hub, publish from spoke:
 
 ```bash
-# Should succeed — in organisationland publish list
-ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}' 2>&1"
-
-# Should be DENIED — not in organisationland publish list
-ssh root@$SPOKE "nats pub forest.land.status '{\"test\": true}' 2>&1"
-ssh root@$SPOKE "nats pub song.telegram.send '{\"test\": true}' 2>&1"
+ssh root@$HUB "nats sub 'tap.landregistry.>' --count 1 --creds /tmp/default.creds" &
+sleep 2
+ssh root@$SPOKE "nats pub tap.landregistry.lands.create '{\"test\": true}'"
 ```
 
-- [ ] `tap.landregistry.lands.create` publish succeeds
-- [ ] `forest.land.status` publish is denied (permissions violation)
-- [ ] `song.telegram.send` publish is denied (permissions violation)
+- [ ] Hub receives the message (export/import allows it)
+
+Non-permitted subject — subscribe on hub, publish from spoke:
+
+```bash
+ssh root@$HUB "timeout 5 nats sub 'forest.land.>' --count 1 --creds /tmp/default.creds; echo 'TIMED OUT (expected)'" &
+sleep 2
+ssh root@$SPOKE "nats pub forest.land.status '{\"test\": true}'"
+```
+
+- [ ] Hub does NOT receive the message (no export/import for this subject)
 
 ## Test 13: Per-credential permission overrides
 
@@ -267,7 +272,7 @@ ssh root@$HUB "nats pub tap.landregistry.lands.create '{\"test\": true}' --creds
 Decode the credential JWT to confirm:
 
 ```bash
-ssh root@$HUB "cat /tmp/narrow.creds | nats jwt decode -"
+ssh root@$HUB "head -2 /tmp/narrow.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null"
 ```
 
 - [ ] Pub allow list contains only `_INBOX.>` and `land.status.>`
@@ -293,7 +298,7 @@ ssh root@$HUB "cat /tmp/narrow.creds | nats jwt decode -"
 
 3. Extract public key and revoke:
    ```bash
-   ssh root@$HUB "cat /tmp/revoke-test.creds | nats jwt decode - 2>&1 | grep 'Subject:'"
+   ssh root@$HUB "head -2 /tmp/revoke-test.creds | tail -1 | cut -d. -f2 | base64 -d 2>/dev/null | grep -oP '\"sub\":\"\\K[^\"]*'"
    ssh root@$HUB "curl -s -X DELETE localhost:8090/api/credentials/<PUBLIC_KEY>"
    ```
    - [ ] Returns `{"status":"revoked"}`
