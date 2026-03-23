@@ -26,7 +26,7 @@ Four accounts serve different trust levels:
 
 | Account | Who uses it | Permissions |
 |---------|-------------|-------------|
-| `default` | Services on land-shared-one (hub) | Full pub/sub (`>`) |
+| `hub` | Services on land-shared-one (hub) | Full pub/sub (`>`) |
 | `system` | NATS server internals | Full pub/sub |
 | `nimsforest` | Forest-specific operations | `tap.landregistry.>`, `forest.land.>`, `land.status.>`, `cloud.>` |
 | `organisationland` | Spoke lands (org forests) | `tap.landregistry.*` (create/delete), `land.status.>`, `_INBOX.>` |
@@ -36,11 +36,11 @@ Four accounts serve different trust levels:
 Accounts are isolated by default. To share subjects between accounts, use exports (provider) and imports (consumer):
 
 ```
-default account                    organisationland account
-─────────────────                 ──────────────────────────
+hub account                        organisationland account
+───────────                       ──────────────────────────
 exports:                          exports:
   land.status.>  ──────────────→    (imported by organisationland)
-                                    tap.landregistry.>  ──────→  (imported by default)
+                                    tap.landregistry.>  ──────→  (imported by hub)
 imports:                          imports:
   tap.landregistry.> ←──────────    land.status.> ←────────────
 ```
@@ -49,10 +49,10 @@ This allows spoke lands to send provisioning requests (`tap.landregistry.lands.c
 
 ### Per-credential permission overrides
 
-When issuing a credential, you can specify narrower publish/subscribe permissions than the account default. For example, a credential in the `default` account could be restricted to only `land.status.>`:
+When issuing a credential, you can specify narrower publish/subscribe permissions than the account default. For example, a credential in the `hub` account could be restricted to only `land.status.>`:
 
 ```bash
-curl -X POST localhost:8090/api/credentials/default \
+curl -X POST localhost:8090/api/credentials/hub \
   -d '{"name": "status-only", "publish": ["land.status.>"], "subscribe": ["land.status.>"]}'
 ```
 
@@ -90,7 +90,7 @@ The forest also runs a 5-minute fallback ticker as a safety net in case a NATS e
 
 ### Important implementation details
 
-**Only publish on revocations, not issuance.** The `mycelium.auth.updated` event must NOT be published after credential issuance. The forest's refresh handler calls `fetchInternalCredentials()` which issues a credential via `POST /api/credentials/default` — publishing on issuance creates an infinite notification loop.
+**Only publish on revocations, not issuance.** The `mycelium.auth.updated` event must NOT be published after credential issuance. The forest's refresh handler calls `fetchInternalCredentials()` which issues a credential via `POST /api/credentials/hub` — publishing on issuance creates an infinite notification loop.
 
 **`MemAccResolver.Store()` is not enough.** On the forest side, storing updated JWTs in the resolver does not trigger the NATS server to re-evaluate account claims. The forest must also call `server.LookupAccount()` + `server.UpdateAccountClaims()` to force the server to process revocation lists in-place.
 

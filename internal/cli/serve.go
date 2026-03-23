@@ -73,7 +73,7 @@ func serveCmd(version string) *cobra.Command {
 
 			// Bootstrap mycelium's own credential for surviving auth restarts
 			if _, err := os.Stat(selfCredsPath); os.IsNotExist(err) {
-				credsContent, err := credentials.IssueCredential("mycelium", "default", nil, nil)
+				credsContent, err := credentials.IssueCredential("mycelium", "hub", nil, nil)
 				if err != nil {
 					log.Printf("warning: failed to issue self credential: %v", err)
 				} else {

@@ -48,7 +48,7 @@ nats_url: "nats://127.0.0.1:4222"
 data_dir: "/var/lib/mycelium"
 operator_name: "nimsforest"
 accounts:
-  default:
+  hub:
     publish: [">"]
     subscribe: [">"]
     exports:
@@ -85,7 +85,7 @@ accounts:
     imports:
       - name: land-status
         subject: "land.status.>"
-        account: default
+        account: hub
         type: stream
 ```
 
@@ -95,7 +95,7 @@ accounts:
 | `nats_url` | NATS server URL | `nats://127.0.0.1:4222` |
 | `data_dir` | Persistent data directory (keys, credentials) | `/var/lib/mycelium` |
 | `operator_name` | Name for the NATS operator JWT | `nimsforest` |
-| `accounts` | Map of account name → permissions (publish, subscribe, exports, imports) | single `default` account |
+| `accounts` | Map of account name → permissions (publish, subscribe, exports, imports) | single `hub` account |
 
 ## KV Keys
 

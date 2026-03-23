@@ -247,7 +247,7 @@ func (svc *Service) writeKeyToDisk(path string, kp *KeyPair) {
 // Pass nil for both to use account-level defaults (backwards compatible).
 func (svc *Service) IssueCredential(name, account string, publish, subscribe []string) (string, error) {
 	if account == "" {
-		account = "default"
+		account = "hub"
 	}
 
 	// Verify account exists in config

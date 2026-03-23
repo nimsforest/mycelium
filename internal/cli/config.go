@@ -35,7 +35,7 @@ func loadConfig(path string) (*Config, error) {
 
 	if cfg.Accounts == nil {
 		cfg.Accounts = map[string]auth.AccountPermissions{
-			"default": {
+			"hub": {
 				Publish:   []string{"*"},
 				Subscribe: []string{"*"},
 			},
